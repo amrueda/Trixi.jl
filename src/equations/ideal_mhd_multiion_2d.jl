@@ -225,6 +225,71 @@ function source_terms_standard(u, x, t, equations::IdealGlmMhdMultiIonEquations2
   return SVector{nvariables(equations), real(equations)}(s)
 end
 
+    """
+    Collision source term, cf. Rueda-Ramirez et al. (2023) and Rubin et al. (2015)
+    """
+    function source_terms_collision(u, x, t, equations::IdealGlmMhdMultiIonEquations2D)        
+        S_std = source_terms_standard(u, x ,t, equations)
+
+        @unpack gammas = equations
+        total_electron_charge, v1_plus, v2_plus, v3_plus, vk1_plus, vk2_plus, vk3_plus = auxiliary_variables(u, equations)
+        p = pressure(u, equations)
+        m_O_plus = 10 #TODO! 
+        m_O2_plus = 20 # TODO!
+        m = [m_O_plus, m_O2_plus] # todo mass vector to equations
+        
+        e = 1.602176634e−19
+        m_e = 9.109e−31 
+        n_e = total_electron_charge / e
+        alpha = 0.75 # TODO save in equations
+        p_e = alpha * sum(p) # TODO generalize and use in non-conservative flux!
+        T_e = p_e / (n_e * m_e) 
+        k_B = 1.380649e−23
+
+        s = (zero(u[1]), zero(u[1]), zero(u[1]))
+        for k in eachcomponent(equations)
+            rho, rho_v1, rho_v2, rho_v3, rho_e = get_component(k, u, equations)
+            v1 = rho_v1 / rho
+            v2 = rho_v2 / rho
+            v3 = rho_v3 / rho
+            T = p[k] / rho
+
+            Z = equations.charge_to_mass[k] * m[k] / e
+            n =  rho / m[k]
+            nu_ke = 1.27e-6 *  Z^2 * sqrt(m_e) * n_e / m[k] * T_e^(-3/2) * n * k_B
+                
+            S_q1 = -nu_ke * (v1 - v1_plus)
+            S_q2 = -nu_ke * (v2 - v2_plus)
+            S_q3 = -nu_ke * (v3 - v3_plus)
+            for l in eachcomponent(equations)
+                rho_l, rho_v_l1, rho_v_l2, rho_v_l3, rho_e_l = get_component(l, u, equations)
+                T_l = p[l] / rho_l
+
+                Z_l = equations.charge_to_mass[l] * m[l] / e
+                n_l =  rho_l / m[l]
+                m_kl = m[k] * m[l] / (m[k] + m[l])
+                T_kl = (m[k] * T_l + m[l] * T) / (m[k] + m[l])
+                nu_kl = 1.27e-6 *  Z^2 * Z_l^2 * sqrt(m_kl) / m[k] * n_l * T_kl^(-3/2)
+                
+                S_q1 += nu_kl*(rho_v_l1 / rho_l - v1)
+                S_q2 += nu_kl*(rho_v_l2 / rho_l - v2)
+                S_q3 += nu_kl*(rho_v_l3 / rho_l - v3)
+            end
+            S_q1 *= rho
+            S_q2 *= rho
+            S_q3 *= rho
+                                
+            
+            #S_p = S_p1 + S_p2 + S_p3 + S_p4 # todo energy source
+            S_E = 0.0 #S_p / (gamma[k] - 1) + (rho_v1 * S_q1 + rho_v2 * S_q2 + rho_v3 * S_q3) / rho
+
+            s = (s..., zero(u[1]), S_q1, S_q2, S_q3, S_E)
+        end
+        println(s)
+        return SVector{nvariables(equations), real(equations)}(S_std .+ s)
+    end
+
+    
 """
 Total entropy-conserving non-conservative two-point "flux"" as described in 
 - Rueda-Ramírez et al. (2023)
@@ -862,27 +927,28 @@ end
   return rho
 end
 
+@inline function pressure(u, equations::IdealGlmMhdMultiIonEquations2D)
+    B1, B2, B3, _ = u
+    p = ()
+    for k in eachcomponent(equations)
+        rho, rho_v1, rho_v2, rho_v3, rho_e = get_component(k, u, equations)        
+        v1 = rho_v1 / rho
+        v2 = rho_v2 / rho
+        v3 = rho_v3 / rho
+        v_mag = sqrt(v1^2 + v2^2 + v3^2)
+        gamma = equations.gammas[k]
+        p = (p..., (gamma - 1)*(rho_e - 0.5*rho*v_mag^2 - 0.5*(B1^2 + B2^2 + B3^2)))
+    end    
+    return SVector{ncomponents(equations), real(equations)}(p)
+end
+
+
 """
 Computes the sum of the densities times the sum of the pressures
 """
 @inline function density_pressure(u, equations::IdealGlmMhdMultiIonEquations2D)
-  B1, B2, B3, _ = u
   rho_total = zero(u[1])
-  p_total = zero(u[1])
-  for k in eachcomponent(equations)
-    rho, rho_v1, rho_v2, rho_v3, rho_e = get_component(k, u, equations)
-    
-    v1 = rho_v1 / rho
-    v2 = rho_v2 / rho
-    v3 = rho_v3 / rho
-    v_mag = sqrt(v1^2 + v2^2 + v3^2)
-    gamma = equations.gammas[k]
-
-    p = (gamma - 1)*(rho_e - 0.5*rho*v_mag^2 - 0.5*(B1^2 + B2^2 + B3^2))
-    
-    rho_total += rho
-    p_total += p
-  end
+  p_total = sum(pressure(u, equations))
   return rho_total * p_total
 end
 
