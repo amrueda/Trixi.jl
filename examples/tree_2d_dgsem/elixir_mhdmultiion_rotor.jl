@@ -115,16 +115,16 @@ ode = semidiscretize(semi, tspan)
 
 summary_callback = SummaryCallback()
 
-analysis_interval = 10
+analysis_interval = 500
 analysis_callback = AnalysisCallback(semi, interval=analysis_interval)
 alive_callback = AliveCallback(analysis_interval=analysis_interval)
 
-save_solution = SaveSolutionCallback(interval=10,
+save_solution = SaveSolutionCallback(interval=1000,
                                      save_initial_solution=true,
                                      save_final_solution=true,
                                      solution_variables=cons2prim)
 
-stepsize_callback = StepsizeCallback(cfl=0.01)
+stepsize_callback = StepsizeCallback(cfl=0.1)
 amr_indicator = IndicatorHennemannGassner(semi,
                                           alpha_max=0.5,
                                           alpha_min=0.001,
@@ -138,7 +138,7 @@ amr_callback = AMRCallback(semi, amr_controller,
                            adapt_initial_condition=true,
                            adapt_initial_condition_only_refine=true)
 
-save_restart = SaveRestartCallback(interval=100,
+save_restart = SaveRestartCallback(interval=10000,
                            save_final_restart=true)
 
 callbacks = CallbackSet(summary_callback,

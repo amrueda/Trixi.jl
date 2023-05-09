@@ -226,12 +226,21 @@ end
     """
     Collision source term, cf. Rueda-Ramirez et al. (2023) and Rubin et al. (2015)
     """
-    function source_terms_collision(u, x, t, equations::IdealGlmMhdMultiIonEquations2D)        
+    function source_terms_collision(u, x, t, equations::IdealMhdMultiIonEquations2D)        
         S_std = source_terms_standard(u, x ,t, equations)
 
         s = zero(MVector{nvariables(equations), eltype(u)})
         @unpack gammas = equations
-        total_electron_charge, v1_plus, v2_plus, v3_plus, vk1_plus, vk2_plus, vk3_plus = auxiliary_variables(u, equations)
+        @unpack charge_to_mass = equations
+        
+        v1_plus, v2_plus, v3_plus, _ = charge_averaged_velocities(u, equations)
+
+        total_electron_charge = zero(u[1])
+        for k in eachcomponent(equations)
+            rho_k = u[(k-1)*5+4]
+            total_electron_charge +=  rho_k * charge_to_mass[k]
+        end
+        
         p = pressure(u, equations)
         m_O_plus = 10 #TODO! 
         m_O2_plus = 20 # TODO!
@@ -246,6 +255,7 @@ end
         k_B = 1.380649e−23
 
         for k in eachcomponent(equations)
+            # todo add index _k everywhere
             rho, rho_v1, rho_v2, rho_v3, rho_e = get_component(k, u, equations)
             v1 = rho_v1 / rho
             v2 = rho_v2 / rho
@@ -275,9 +285,9 @@ end
                 T_kl = (m[k] * T_l + m[l] * T) / (m[k] + m[l])
                 nu_kl = 1.27e-6 *  Z^2 * Z_l^2 * sqrt(m_kl) / m[k] * n_l * T_kl^(-3/2)
                 
-                S_q1 += nu_kl*(rho_v_l1 / rho_l - v1)
-                S_q2 += nu_kl*(rho_v_l2 / rho_l - v2)
-                S_q3 += nu_kl*(rho_v_l3 / rho_l - v3)
+                S_q1 += nu_kl*(v1_l - v1)
+                S_q2 += nu_kl*(v2_l - v2)
+                S_q3 += nu_kl*(v3_l - v3)
 
                 S_p1 += nu_kl*(n*m[k]) / (m[l] + m[k])*k_B*(T_l - T)
                 S_p3 += nu_kl*rho*m[l] / (m[l] + m[k]) * ((v1_l - v1)^2 + (v2_l - v2)^2 + (v3_l - v3)^2)
@@ -286,11 +296,11 @@ end
             S_q2 *= rho
             S_q3 *= rho
 
-            S_p2 = 2*nu_ke*rho / m[k] * k_B*(T_e - T)
-            S_p4 = 2*nu_ke*rho / m[k] * k_B*((v1_l - v1)^2 + (v2_l - v2)^2 + (v3_l - v3)^2)
+            S_p2 = 2*nu_ke * rho / m[k] * k_B*(T_e - T)
+            S_p4 = 2*nu_ke * rho * ((v1_plus - v1)^2 + (v2_plus - v2)^2 + (v3_plus - v3)^2)
 
             S_p = 2*S_p1 + S_p2 + (gammas[k] - 1)*S_p3 + S_p4 
-            S_E = S_p / (gammas[k] - 1) + (rho_v1 * S_q1 + rho_v2 * S_q2 + rho_v3 * S_q3) / rho
+            S_E = S_p / (gammas[k] - 1) + (v1 * S_q1 + v2 * S_q2 + v3 * S_q3)
             
             set_component!(s, k, 0.0, S_q1, S_q2, S_q3, S_E, equations)
         end
@@ -965,10 +975,9 @@ end
   return rho
 end
 
-# todo refactor according to merge
-@inline function pressure(u, equations::IdealGlmMhdMultiIonEquations2D)
+@inline function pressure(u, equations::IdealMhdMultiIonEquations2D)
     B1, B2, B3, _ = u
-    p = ()
+    p = zero(MVector{ncomponents(equations), real(equations)})
     for k in eachcomponent(equations)
         rho, rho_v1, rho_v2, rho_v3, rho_e = get_component(k, u, equations)        
         v1 = rho_v1 / rho
@@ -976,7 +985,7 @@ end
         v3 = rho_v3 / rho
         v_mag = sqrt(v1^2 + v2^2 + v3^2)
         gamma = equations.gammas[k]
-        p = (p..., (gamma - 1)*(rho_e - 0.5*rho*v_mag^2 - 0.5*(B1^2 + B2^2 + B3^2)))
+        p[k] = (gamma - 1)*(rho_e - 0.5*rho*v_mag^2 - 0.5*(B1^2 + B2^2 + B3^2))
     end    
     return SVector{ncomponents(equations), real(equations)}(p)
 end
@@ -985,7 +994,7 @@ end
 """
 Computes the sum of the densities times the sum of the pressures
 """
-@inline function density_pressure(u, equations::IdealGlmMhdMultiIonEquations2D)
+@inline function density_pressure(u, equations::IdealMhdMultiIonEquations2D)
   rho_total = zero(u[1])
   p_total = sum(pressure(u, equations))
   return rho_total * p_total
