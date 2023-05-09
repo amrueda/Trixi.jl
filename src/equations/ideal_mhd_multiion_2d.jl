@@ -240,7 +240,7 @@ end
         
         e = 1.602176634e−19
         m_e = 9.109e−31 
-        n_e = total_electron_charge / e
+        n_e = total_electron_charge
         alpha = 0.75 # TODO save in equations
         p_e = alpha * sum(p) # TODO generalize and use in non-conservative flux!
         T_e = p_e / (n_e * m_e) 
@@ -254,7 +254,7 @@ end
             v3 = rho_v3 / rho
             T = p[k] / rho
 
-            Z = equations.charge_to_mass[k] * m[k] / e
+            Z = equations.charge_to_mass[k] * m[k] 
             n =  rho / m[k]
             nu_ke = 1.27e-6 *  Z^2 * sqrt(m_e) * n_e / m[k] * T_e^(-3/2) * n * k_B
                 
@@ -265,7 +265,7 @@ end
                 rho_l, rho_v_l1, rho_v_l2, rho_v_l3, rho_e_l = get_component(l, u, equations)
                 T_l = p[l] / rho_l
 
-                Z_l = equations.charge_to_mass[l] * m[l] / e
+                Z_l = equations.charge_to_mass[l] * m[l] 
                 n_l =  rho_l / m[l]
                 m_kl = m[k] * m[l] / (m[k] + m[l])
                 T_kl = (m[k] * T_l + m[l] * T) / (m[k] + m[l])
@@ -285,7 +285,6 @@ end
 
             s = (s..., zero(u[1]), S_q1, S_q2, S_q3, S_E)
         end
-        println(s)
         return SVector{nvariables(equations), real(equations)}(S_std .+ s)
     end
 
