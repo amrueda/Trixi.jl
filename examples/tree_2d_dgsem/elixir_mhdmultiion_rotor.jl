@@ -4,18 +4,18 @@ using Trixi
 
 ###############################################################################
 # semidiscretization of the ideal MHD equations
-equations = IdealGlmMhdMultiIonEquations2D(gammas           = (1.4, 1.4),
+equations = IdealMhdMultiIonEquations2D(gammas           = (1.4, 1.4),
                                                  charge_to_mass   = (1.0, 2.0))
 
 """
-    initial_condition_rotor(x, t, equations::IdealGlmMhdMultiIonEquations2D)
+    initial_condition_rotor(x, t, equations::IdealMhdMultiIonEquations2D)
 
 The classical MHD rotor test case. Here, the setup is taken from
 - Dominik Derigs, Gregor J. Gassner, Stefanie Walch & Andrew R. Winters (2018)
   Entropy Stable Finite Volume Approximations for Ideal Magnetohydrodynamics
   [doi: 10.1365/s13291-018-0178-9](https://doi.org/10.1365/s13291-018-0178-9)
 """
-function initial_condition_rotor(x, t, equations::IdealGlmMhdMultiIonEquations2D)
+function initial_condition_rotor(x, t, equations::IdealMhdMultiIonEquations2D)
   # setup taken from Derigs et al. DMV article (2018)
   # domain must be [0, 1] x [0, 1], γ = 1.4
   B1 = 5.0/sqrt(4.0*pi)
@@ -29,8 +29,8 @@ function initial_condition_rotor(x, t, equations::IdealGlmMhdMultiIonEquations2D
   f = (0.115 - r)/0.015
   if r <= 0.1
     rho = 10.0
-    v1 = -20.0*dy
-    v2 = 20.0*dx
+    v1 = -20.0 * dy
+    v2 = 20.0 * dx
   elseif r >= 0.115
     if x[1] > 0.75
       rho = 0.49 * (tanh(50 * (x[1] - 1.0)) + 1) + 0.02
@@ -56,8 +56,8 @@ function initial_condition_rotor(x, t, equations::IdealGlmMhdMultiIonEquations2D
   f = (0.115 - r)/0.015
   if r <= 0.1
     rho2 = 10.0
-    v12 = -20.0*dy
-    v22 = 20.0*dx
+    v12 = -20.0 * dy
+    v22 = 20.0 * dx
   elseif r >= 0.115
     if x[1] < 0.25
       rho2 = 0.49 * (-tanh(50 * (x[1])) + 1) + 0.02
@@ -69,9 +69,9 @@ function initial_condition_rotor(x, t, equations::IdealGlmMhdMultiIonEquations2D
     v12 = 0.0
     v22 = 0.0
   else
-    rho2 = 1.0 + 9.0*f
-    v12 = -20.0*f*dy
-    v22 = 20.0*f*dx
+    rho2 = 1.0 + 9.0 * f
+    v12 = -20.0 * f * dy
+    v22 = 20.0 * f * dx
   end
   v3 = 0.0
   p = 1.0

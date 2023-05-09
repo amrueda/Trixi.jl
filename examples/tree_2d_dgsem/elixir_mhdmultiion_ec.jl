@@ -4,12 +4,11 @@ using Trixi
 
 ###############################################################################
 # semidiscretization of the ideal MHD equations
-equations = IdealGlmMhdMultiIonEquations2D(gammas           = (2.0, 2.0),
+equations = IdealMhdMultiIonEquations2D(gammas           = (2.0, 2.0),
                                                  charge_to_mass   = (1.0, 1.0))
 
 initial_condition = initial_condition_weak_blast_wave
 
-#volume_flux = flux_central
 volume_flux = (flux_ruedaramirez_etal, flux_nonconservative_ruedaramirez_etal)
 surface_flux = (flux_ruedaramirez_etal, flux_nonconservative_ruedaramirez_etal)
 solver = DGSEM(polydeg=3, surface_flux=surface_flux,
@@ -34,7 +33,7 @@ ode = semidiscretize(semi, tspan)
 
 summary_callback = SummaryCallback()
 
-analysis_interval = 100
+analysis_interval = 10
 analysis_callback = AnalysisCallback(semi, interval=analysis_interval)
 alive_callback = AliveCallback(analysis_interval=analysis_interval)
 
