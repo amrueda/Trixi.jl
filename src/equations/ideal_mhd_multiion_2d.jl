@@ -13,28 +13,39 @@ The ideal compressible multi-ion MHD equations in two space dimensions.
 mutable struct IdealMhdMultiIonEquations2D{NVARS, NCOMP, RealT<:Real} <: AbstractIdealMhdMultiIonEquations{2, NVARS, NCOMP}
   gammas            ::SVector{NCOMP, RealT} # Heat capacity ratios
   charge_to_mass    ::SVector{NCOMP, RealT} # Charge to mass ratios
+  gas_constants     ::SVector{NCOMP, RealT} # Charge to mass ratios
+  molar_masses      ::SVector{NCOMP, RealT} # Charge to mass ratios
+  collision_frequency ::RealT               # Single collision frequency scaled with molecular mass of ion 1 (TODO: Replace by matrix of collision frequencies)
 
   function IdealMhdMultiIonEquations2D{NVARS, NCOMP, RealT}(gammas::SVector{NCOMP, RealT},
-                                                            charge_to_mass::SVector{NCOMP, RealT}) where {NVARS, NCOMP, RealT<:Real}
+                                                            charge_to_mass::SVector{NCOMP, RealT},
+                                                            gas_constants::SVector{NCOMP, RealT},
+                                                            molar_masses::SVector{NCOMP, RealT},
+                                                            collision_frequency::RealT) where {NVARS, NCOMP, RealT<:Real}
 
     NCOMP >= 1 || throw(DimensionMismatch("`gammas` and `charge_to_mass` have to be filled with at least one value"))
 
-    new(gammas, charge_to_mass)
+    new(gammas, charge_to_mass, gas_constants, molar_masses, collision_frequency)
   end
 end
 
-function IdealMhdMultiIonEquations2D(; gammas, charge_to_mass)
+function IdealMhdMultiIonEquations2D(; gammas, charge_to_mass, gas_constants, molar_masses, collision_frequency)
   _gammas         = promote(gammas...)
   _charge_to_mass = promote(charge_to_mass...)
-  RealT           = promote_type(eltype(_gammas), eltype(_charge_to_mass))
+  _gas_constants  = promote(gas_constants...)
+  _molar_masses   = promote(molar_masses...)
+  RealT           = promote_type(eltype(_gammas), eltype(_charge_to_mass), eltype(_gas_constants), eltype(_molar_masses), eltype(collision_frequency))
 
   NVARS = length(_gammas) * 5 + 3
   NCOMP = length(_gammas)
 
-  __gammas        = SVector(map(RealT, _gammas))
+  __gammas         = SVector(map(RealT, _gammas))
   __charge_to_mass = SVector(map(RealT, _charge_to_mass))
+  __gas_constants  = SVector(map(RealT, _gas_constants))
+  __molar_masses   = SVector(map(RealT, _molar_masses))
+  __collision_frequency = map(RealT, collision_frequency)
 
-  return IdealMhdMultiIonEquations2D{NVARS, NCOMP, RealT}(__gammas, __charge_to_mass)
+  return IdealMhdMultiIonEquations2D{NVARS, NCOMP, RealT}(__gammas, __charge_to_mass, __gas_constants, __molar_masses, __collision_frequency)
 end
 
 @inline Base.real(::IdealMhdMultiIonEquations2D{NVARS, NCOMP, RealT}) where {NVARS, NCOMP, RealT} = RealT
@@ -228,8 +239,7 @@ end
         S_std = source_terms_standard(u, x ,t, equations)
 
         s = zero(MVector{nvariables(equations), eltype(u)})
-        @unpack gammas = equations
-        @unpack charge_to_mass = equations
+        @unpack gammas, charge_to_mass = equations
         
         v1_plus, v2_plus, v3_plus, _ = charge_averaged_velocities(u, equations)
 
@@ -304,7 +314,47 @@ end
         end
         return SVector{nvariables(equations), real(equations)}(S_std .+ s)
     end
+"""
+Ion-ion collision source terms, cf. Rueda-Ramirez et al. (2023) and Rubin et al. (2015)
+"""
+function source_terms_collision_ion_ion(u, x, t, equations::IdealMhdMultiIonEquations2D)        
+  S_std = source_terms_standard(u, x ,t, equations)
 
+  s = zero(MVector{nvariables(equations), eltype(u)})
+  @unpack gammas, charge_to_mass, gas_constants, molar_masses, collision_frequency = equations
+  
+  prim = cons2prim(u, equations)
+
+  for k in eachcomponent(equations)
+    # todo add index _k everywhere
+    rho, v1, v2, v3, p = get_component(k, prim, equations)
+    T = p / (rho * gas_constants[k])
+    
+    S_q1 = 0.0
+    S_q2 = 0.0
+    S_q3 = 0.0
+    S_E  = 0.0
+    for l in eachcomponent(equations)
+      rho_l, v1_l, v2_l, v3_l, p_l = get_component(l, prim, equations)
+      T_l = p_l / (rho_l * gas_constants[l])
+
+      # Compute effective collision frequency
+      v_kl = collision_frequency * (rho_l * molar_masses[1] / molar_masses[l])^(5/2) / p_l^(3/2)
+
+      S_q1 += v_kl * (v1_l - v1)
+      S_q2 += v_kl * (v2_l - v2)
+      S_q3 += v_kl * (v3_l - v3)
+
+      S_E += (3 * molar_masses[1] * gas_constants[1] * (T_l - T) 
+              + molar_masses[l] * ((v1_l - v1)^2 + (v2_l - v2)^2 + (v3_l - v3)^2)) * v_kl * rho / (molar_masses[k] + molar_masses[l])
+    end
+
+    S_E += (v1 * S_q1 + v2 * S_q2 + v3 * S_q3)
+    
+    set_component!(s, k, 0.0, S_q1, S_q2, S_q3, S_E, equations)
+  end
+  return SVector{nvariables(equations), real(equations)}(S_std .+ s)
+end
     
 """
 Total entropy-conserving non-conservative two-point "flux"" as described in 

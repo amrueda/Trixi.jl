@@ -5,7 +5,10 @@ using Trixi
 ###############################################################################
 # semidiscretization of the ideal MHD equations
 equations = IdealMhdMultiIonEquations2D(gammas = (5/3, 5/3),
-                                        charge_to_mass = (1.0, 1.0))
+                                        charge_to_mass = (10.737855, 10.737855),
+                                        gas_constants = (1.0, 1.0),
+                                        molar_masses = (1.0, 1.0),
+                                        collision_frequency = 0.498182)
 
 """
     initial_condition_orszag_tang(x, t, equations::IdealGlmMhdEquations2D)
@@ -29,24 +32,24 @@ function initial_condition_orszag_tang(x, t, equations::IdealMhdMultiIonEquation
   B3 = 0.0
   
   rho1 = zero(x[1])
-  if x[1] > 0.75
-    rho1 = 0.49 * (tanh(50 * (x[1] - 1.0)) + 1) + 0.02
-  elseif x[1] > 0.25
-    rho1 = 0.49 * (-tanh(50 * (x[1] - 0.5)) + 1) + 0.02
+  if x[2] > 0.75
+    rho1 = 0.49 * (tanh(50 * (x[2] - 1.0)) + 1) + 0.02
+  elseif x[2] > 0.25
+    rho1 = 0.49 * (-tanh(50 * (x[2] - 0.5)) + 1) + 0.02
   else
-    rho1 = 0.49 * (tanh(50 * (x[1])) + 1) + 0.02
+    rho1 = 0.49 * (tanh(50 * (x[2])) + 1) + 0.02
   end
 
-  if x[1] < 0.25
-    rho2 = 0.49 * (-tanh(50 * (x[1])) + 1) + 0.02
-  elseif x[1] < 0.75
-    rho2 = 0.49 * (tanh(50 * (x[1] - 0.5)) + 1) + 0.02
+  if x[2] < 0.25
+    rho2 = 0.49 * (-tanh(50 * (x[2])) + 1) + 0.02
+  elseif x[2] < 0.75
+    rho2 = 0.49 * (tanh(50 * (x[2] - 0.5)) + 1) + 0.02
   else
-    rho2 = 0.49 * (-tanh(50 * (x[1] - 1.0)) + 1) + 0.02
+    rho2 = 0.49 * (-tanh(50 * (x[2] - 1.0)) + 1) + 0.02
   end
 
-  p1 = rho1 * T
-  p2 = rho2 * T
+  p1 = T # * rho1
+  p2 = T # * rho2
 
   return prim2cons(SVector(B1, B2, B3, rho1, v1, v2, v3, p1, rho2, v1, v2, v3, p2), equations)
 
@@ -77,7 +80,7 @@ mesh = TreeMesh(coordinates_min, coordinates_max,
 
 
 semi = SemidiscretizationHyperbolic(mesh, equations, initial_condition, solver,
-                                    source_terms=source_terms_standard)
+                                    source_terms=source_terms_collision_ion_ion)
 
 
 ###############################################################################
