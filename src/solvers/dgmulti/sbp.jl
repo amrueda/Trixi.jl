@@ -456,8 +456,8 @@ function calc_interface_flux!(cache, surface_integral::SurfaceIntegralWeakForm,
   nothing
 end
 
-function calc_surface_integral!(du, u, surface_integral::SurfaceIntegralWeakForm,
-                                mesh::DGMultiMesh, equations,
+function calc_surface_integral!(du, u, mesh::DGMultiMesh, equations,
+                                surface_integral::SurfaceIntegralWeakForm,
                                 dg::DGMultiPeriodicFDSBP, cache)
   @assert nelements(mesh, dg, cache) == 1
   nothing
@@ -488,7 +488,7 @@ function calc_volume_integral!(du, u, mesh::DGMultiMesh,
   if Threads.nthreads() > 1
 
     for dim in eachdim(mesh)
-      normal_direction = get_contravariant_vector(1, dim, mesh)
+      normal_direction = get_contravariant_vector(1, dim, mesh, cache)
 
       # These are strong-form operators of the form `D = M \ Q` where `M` is diagonal
       # and `Q` is skew-symmetric. Since `M` is diagonal, `inv(M)` scales the rows of `Q`.
@@ -525,7 +525,7 @@ function calc_volume_integral!(du, u, mesh::DGMultiMesh,
     # is expected to yield about a 2x speedup, so we default to the symmetry-exploiting
     # volume integral unless we have >2 threads (which should yield >2 speedup).
     for dim in eachdim(mesh)
-      normal_direction = get_contravariant_vector(1, dim, mesh)
+      normal_direction = get_contravariant_vector(1, dim, mesh, cache)
 
       A = dg.basis.Drst[dim]
 

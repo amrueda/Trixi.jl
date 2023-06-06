@@ -5,8 +5,7 @@ using Trixi
 
 include("test_trixi.jl")
 
-# pathof(Trixi) returns /path/to/Trixi/src/Trixi.jl, dirname gives the parent directory
-EXAMPLES_DIR = joinpath(pathof(Trixi) |> dirname |> dirname, "examples", "tree_2d_dgsem")
+EXAMPLES_DIR = pkgdir(Trixi, "examples", "tree_2d_dgsem")
 
 @testset "Compressible Euler" begin
   @trixi_testset "elixir_euler_source_terms.jl" begin
@@ -62,6 +61,12 @@ EXAMPLES_DIR = joinpath(pathof(Trixi) |> dirname |> dirname, "examples", "tree_2
     @test_trixi_include(joinpath(EXAMPLES_DIR, "elixir_euler_shockcapturing.jl"),
       l2   = [0.05380629130119074, 0.04696798008325309, 0.04697067787841479, 0.19687382235494968],
       linf = [0.18527440131928286, 0.2404798030563736, 0.23269573860381076, 0.6874012187446894])
+  end
+
+  @trixi_testset "elixir_euler_shockcapturing_subcell.jl" begin
+    @test_trixi_include(joinpath(EXAMPLES_DIR, "elixir_euler_shockcapturing_subcell.jl"),
+      l2   = [0.08508147906199143, 0.04510299017724501, 0.045103019801950375, 0.6930704343869766],
+      linf = [0.31123546471463326, 0.5616274869594462, 0.5619692712224448, 2.88670199345138])
   end
 
   @trixi_testset "elixir_euler_blast_wave.jl" begin

@@ -1,6 +1,6 @@
-# Convenience type to allow dispatch on solution objects that were created by Trixi
+# Convenience type to allow dispatch on solution objects that were created by Trixi.jl
 #
-# This is a union of a Trixi-specific SciMLBase.ODESolution and of Trixi's own
+# This is a union of a Trixi.jl-specific SciMLBase.ODESolution and of Trixi.jl's own
 # TimeIntegratorSolution.
 #
 # Note: This is an experimental feature and may be changed in future releases without notice.
@@ -276,7 +276,7 @@ end
     PlotData2D(sol; kwargs...)
 
 Create a `PlotData2D` object from a solution object created by either `OrdinaryDiffEq.solve!` (which
-returns a `SciMLBase.ODESolution`) or Trixi's own `solve!` (which returns a
+returns a `SciMLBase.ODESolution`) or Trixi.jl's own `solve!` (which returns a
 `TimeIntegratorSolution`).
 
 !!! warning "Experimental implementation"
@@ -501,7 +501,7 @@ When visualizing data from a two-dimensional simulation, a 1D slice is extracted
 `slice` specifies the axis along which the slice is extracted and may be `:x`, or `:y`.
 The slice position is specified by a `point` that lies on it, which defaults to `(0.0, 0.0)`.
 Both of these values are ignored when visualizing 1D data.
-This applies analogously to three-dimensonal simulations, where `slice` may be `:xy`, `:xz`, or `:yz`.
+This applies analogously to three-dimensional simulations, where `slice` may be `:xy`, `:xz`, or `:yz`.
 
 Another way to visualize 2D/3D data is by creating a plot along a given curve.
 This is done with the keyword argument `curve`. It can be set to a list of 2D/3D points
@@ -529,6 +529,29 @@ function PlotData1D(u, mesh::TreeMesh, equations, solver, cache;
   if ndims(mesh) == 1
     x, data, mesh_vertices_x = get_data_1d(original_nodes, unstructured_data, nvisnodes)
     orientation_x = 1
+
+    # Special care is required for first-order FV approximations since the nodes are the
+    # cell centers and do not contain the boundaries
+    n_nodes = size(unstructured_data, 1)
+    if n_nodes == 1
+      n_visnodes = length(x) ÷ nelements(solver, cache)
+      if n_visnodes != 2
+        throw(ArgumentError("This number of visualization nodes is currently not supported for finite volume approximations."))
+      end
+      left_boundary = mesh.tree.center_level_0[1] - mesh.tree.length_level_0 / 2
+      dx_2 = zero(left_boundary)
+      for i in 1:div(length(x), 2)
+        # Adjust plot nodes so that they are at the boundaries of each element
+        dx_2 = x[2 * i - 1] - left_boundary
+        x[2 * i - 1] -= dx_2
+        x[2 * i    ] += dx_2
+        left_boundary = left_boundary+ 2 * dx_2
+
+        # Adjust mesh plot nodes
+        mesh_vertices_x[i] -= dx_2
+      end
+      mesh_vertices_x[end] += dx_2
+    end
   elseif ndims(mesh) == 2
     if curve !== nothing
       x, data, mesh_vertices_x = unstructured_2d_to_1d_curve(original_nodes, unstructured_data, nvisnodes, curve, mesh, solver, cache)
@@ -620,7 +643,7 @@ end
     PlotData1D(sol; kwargs...)
 
 Create a `PlotData1D` object from a solution object created by either `OrdinaryDiffEq.solve!`
-(which returns a `SciMLBase.ODESolution`) or Trixi's own `solve!` (which returns a
+(which returns a `SciMLBase.ODESolution`) or Trixi.jl's own `solve!` (which returns a
 `TimeIntegratorSolution`).
 
 !!! warning "Experimental implementation"

@@ -102,6 +102,40 @@ function Base.show(io::IO, ::MIME"text/plain", indicator::IndicatorHennemannGass
 end
 
 
+function (indicator_hg::IndicatorHennemannGassner)(u, mesh, equations, dg::DGSEM, cache;
+                                                   kwargs...)
+  @unpack alpha_smooth = indicator_hg
+  @unpack alpha, alpha_tmp = indicator_hg.cache
+  # TODO: Taal refactor, when to `resize!` stuff changed possibly by AMR?
+  #       Shall we implement `resize!(semi::AbstractSemidiscretization, new_size)`
+  #       or just `resize!` whenever we call the relevant methods as we do now?
+  resize!(alpha, nelements(dg, cache))
+  if alpha_smooth
+    resize!(alpha_tmp, nelements(dg, cache))
+  end
+
+  # magic parameters
+  threshold = 0.5 * 10^(-1.8 * (nnodes(dg))^0.25)
+  parameter_s = log((1 - 0.0001) / 0.0001)
+
+  @threaded for element in eachelement(dg, cache)
+    # This is dispatched by mesh dimension.
+    # Use this function barrier and unpack inside to avoid passing closures to
+    # Polyester.jl with `@batch` (`@threaded`).
+    # Otherwise, `@threaded` does not work here with Julia ARM on macOS.
+    # See https://github.com/JuliaSIMD/Polyester.jl/issues/88.
+    calc_indicator_hennemann_gassner!(
+      indicator_hg, threshold, parameter_s, u,
+      element, mesh, equations, dg, cache)
+  end
+
+  if alpha_smooth
+    apply_smoothing!(mesh, alpha, alpha_tmp, dg, cache)
+  end
+
+  return alpha
+end
+
 
 """
     IndicatorLöhner (equivalent to IndicatorLoehner)
@@ -174,6 +208,84 @@ const IndicatorLoehner = IndicatorLöhner
   num = abs(up - 2 * u0 + um)
   den = abs(up - u0) + abs(u0-um) + löhner.f_wave * (abs(up) + 2 * abs(u0) + abs(um))
   return num / den
+end
+
+
+
+"""
+    IndicatorIDP(equations::AbstractEquations, basis;
+                 IDPPositivity=false,
+                 variables_cons=(),
+                 positivity_correction_factor=0.1)
+
+Blending indicator used for subcell shock-capturing [`VolumeIntegralShockCapturingSubcell`](@ref) including:
+- positivity limiting for conservative variables.
+
+## References
+
+- Rueda-Ramírez, Pazner, Gassner (2022)
+  "Subcell Limiting Strategies for Discontinuous Galerkin Spectral Element Methods"
+- Pazner (2020)
+  "Sparse invariant domain preserving discontinuous Galerkin methods with subcell convex limiting"
+  [arXiv:2004.08503](https://doi.org/10.1016/j.cma.2021.113876)
+
+!!! warning "Experimental implementation"
+    This is an experimental feature and may change in future releases.
+"""
+struct IndicatorIDP{RealT<:Real, LimitingVariablesCons, Cache} <: AbstractIndicator
+  positivity::Bool
+  variables_cons::LimitingVariablesCons   # Positivity of conservative variables
+  cache::Cache
+  positivity_correction_factor::RealT     # Correction factor for IDPPositivity
+end
+
+# this method is used when the indicator is constructed as for shock-capturing volume integrals
+function IndicatorIDP(equations::AbstractEquations, basis;
+                      positivity=false,
+                      variables_cons=(),
+                      positivity_correction_factor=0.1)
+  number_bounds = positivity * length(variables_cons)
+
+  cache = create_cache(IndicatorIDP, equations, basis, number_bounds)
+
+  IndicatorIDP{typeof(positivity_correction_factor), typeof(variables_cons), typeof(cache)}(positivity,
+      variables_cons, cache, positivity_correction_factor)
+end
+
+function Base.show(io::IO, indicator::IndicatorIDP)
+  @nospecialize indicator # reduce precompilation time
+  @unpack positivity = indicator
+
+  print(io, "IndicatorIDP(")
+  if !(positivity)
+    print(io, "No limiter selected => pure DG method")
+  else
+    print(io, "limiter=(")
+    positivity && print(io, "Positivity with variables $(indicator.variables_cons)")
+    print(io, "), ")
+  end
+  print(io, ")")
+end
+
+function Base.show(io::IO, ::MIME"text/plain", indicator::IndicatorIDP)
+  @nospecialize indicator # reduce precompilation time
+  @unpack positivity = indicator
+
+  if get(io, :compact, false)
+    show(io, indicator)
+  else
+    if !(positivity)
+      setup = ["limiter" => "No limiter selected => pure DG method"]
+    else
+      setup = ["limiter" => ""]
+      if positivity
+        string = "Positivity with variables $(indicator.variables_cons))"
+        setup = [setup..., "" => string]
+        setup = [setup..., "" => " "^14 * "and positivity correction factor $(indicator.positivity_correction_factor)"]
+      end
+    end
+    summary_box(io, "IndicatorIDP", setup)
+  end
 end
 
 

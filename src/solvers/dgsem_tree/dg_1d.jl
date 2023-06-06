@@ -71,8 +71,8 @@ end
 
 function rhs!(du, u, t,
               mesh::TreeMesh{1}, equations,
-              initial_condition, boundary_conditions, source_terms,
-              dg::DG, cache)
+              initial_condition, boundary_conditions, source_terms::Source,
+              dg::DG, cache) where {Source}
   # Reset du
   @trixi_timeit timer() "reset ∂u/∂t" reset_du!(du, dg, cache)
 
@@ -178,7 +178,7 @@ end
 
     # All diagonal entries of `derivative_split` are zero. Thus, we can skip
     # the computation of the diagonal terms. In addition, we use the symmetry
-    # of the `volume_flux` to save half of the possible two-poitn flux
+    # of the `volume_flux` to save half of the possible two-point flux
     # computations.
 
     # x direction

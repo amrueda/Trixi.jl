@@ -172,6 +172,47 @@ function Base.show(io::IO, ::MIME"text/plain", integral::VolumeIntegralPureLGLFi
 end
 
 
+"""
+    VolumeIntegralShockCapturingSubcell(indicator;
+                                        volume_flux_dg, volume_flux_fv)
+
+A shock-capturing volume integral type for DG methods based on a subcell blending approach
+with a low-order FV method from the preprint paper
+- Rueda-Ramírez, Pazner, Gassner (2022)
+  "Subcell Limiting Strategies for Discontinuous Galerkin Spectral Element Methods"
+
+!!! warning "Experimental implementation"
+    This is an experimental feature and may change in future releases.
+
+See also: [`VolumeIntegralShockCapturingHG`](@ref)
+"""
+struct VolumeIntegralShockCapturingSubcell{VolumeFluxDG, VolumeFluxFV, Indicator} <: AbstractVolumeIntegral
+  volume_flux_dg::VolumeFluxDG
+  volume_flux_fv::VolumeFluxFV
+  indicator::Indicator
+end
+
+function VolumeIntegralShockCapturingSubcell(indicator; volume_flux_dg,
+                                                        volume_flux_fv)
+  VolumeIntegralShockCapturingSubcell{typeof(volume_flux_dg), typeof(volume_flux_fv), typeof(indicator)}(
+    volume_flux_dg, volume_flux_fv, indicator)
+end
+
+function Base.show(io::IO, mime::MIME"text/plain", integral::VolumeIntegralShockCapturingSubcell)
+  @nospecialize integral # reduce precompilation time
+
+  if get(io, :compact, false)
+    show(io, integral)
+  else
+    summary_header(io, "VolumeIntegralShockCapturingSubcell")
+    summary_line(io, "volume flux DG", integral.volume_flux_dg)
+    summary_line(io, "volume flux FV", integral.volume_flux_fv)
+    summary_line(io, "indicator", integral.indicator |> typeof |> nameof)
+    show(increment_indent(io), mime, integral.indicator)
+    summary_footer(io)
+  end
+end
+
 # TODO: FD. Should this definition live in a different file because it is
 # not strictly a DG method?
 """
@@ -375,7 +416,7 @@ const MeshesDGSEM = Union{TreeMesh, StructuredMesh, UnstructuredMesh2D, P4estMes
     eachnode(dg::DG)
 
 Return an iterator over the indices that specify the location in relevant data structures
-for the nodes in `dg`. 
+for the nodes in `dg`.
 In particular, not the nodes themselves are returned.
 """
 @inline eachnode(dg::DG) = Base.OneTo(nnodes(dg))
@@ -390,7 +431,7 @@ In particular, not the nodes themselves are returned.
     eachelement(dg::DG, cache)
 
 Return an iterator over the indices that specify the location in relevant data structures
-for the elements in `cache`. 
+for the elements in `cache`.
 In particular, not the elements themselves are returned.
 """
 @inline eachelement(dg::DG, cache)   = Base.OneTo(nelements(dg, cache))
@@ -399,7 +440,7 @@ In particular, not the elements themselves are returned.
     eachinterface(dg::DG, cache)
 
 Return an iterator over the indices that specify the location in relevant data structures
-for the interfaces in `cache`. 
+for the interfaces in `cache`.
 In particular, not the interfaces themselves are returned.
 """
 @inline eachinterface(dg::DG, cache) = Base.OneTo(ninterfaces(dg, cache))
@@ -408,7 +449,7 @@ In particular, not the interfaces themselves are returned.
     eachboundary(dg::DG, cache)
 
 Return an iterator over the indices that specify the location in relevant data structures
-for the boundaries in `cache`. 
+for the boundaries in `cache`.
 In particular, not the boundaries themselves are returned.
 """
 @inline eachboundary(dg::DG, cache)  = Base.OneTo(nboundaries(dg, cache))
@@ -417,7 +458,7 @@ In particular, not the boundaries themselves are returned.
     eachmortar(dg::DG, cache)
 
 Return an iterator over the indices that specify the location in relevant data structures
-for the mortars in `cache`. 
+for the mortars in `cache`.
 In particular, not the mortars themselves are returned.
 """
 @inline eachmortar(dg::DG, cache)    = Base.OneTo(nmortars(dg, cache))
@@ -426,7 +467,7 @@ In particular, not the mortars themselves are returned.
     eachmpiinterface(dg::DG, cache)
 
 Return an iterator over the indices that specify the location in relevant data structures
-for the MPI interfaces in `cache`. 
+for the MPI interfaces in `cache`.
 In particular, not the interfaces themselves are returned.
 """
 @inline eachmpiinterface(dg::DG, cache) = Base.OneTo(nmpiinterfaces(dg, cache))
@@ -435,7 +476,7 @@ In particular, not the interfaces themselves are returned.
     eachmpimortar(dg::DG, cache)
 
 Return an iterator over the indices that specify the location in relevant data structures
-for the MPI mortars in `cache`. 
+for the MPI mortars in `cache`.
 In particular, not the mortars themselves are returned.
 """
 @inline eachmpimortar(dg::DG, cache) = Base.OneTo(nmpimortars(dg, cache))
@@ -450,7 +491,7 @@ In particular, not the mortars themselves are returned.
 
 
 # The following functions assume an array-of-structs memory layout
-# We would like to experiment with different mamory layout choices
+# We would like to experiment with different memory layout choices
 # in the future, see
 # - https://github.com/trixi-framework/Trixi.jl/issues/88
 # - https://github.com/trixi-framework/Trixi.jl/issues/87
@@ -520,6 +561,12 @@ AdaptorAMR(mesh, dg::DG) = AdaptorL2(dg.basis)
 # DGSEM (discontinuous Galerkin spectral element method)
 include("dgsem/dgsem.jl")
 
+# Finite difference methods using summation by parts (SBP) operators
+# These methods are very similar to DG methods since they also impose interface
+# and boundary conditions weakly. Thus, these methods can re-use a lot of
+# functionality implemented for DGSEM.
+include("fdsbp_tree/fdsbp.jl")
+
 
 
 function allocate_coefficients(mesh::AbstractMesh, equations, dg::DG, cache)
@@ -562,6 +609,25 @@ end
     PtrArray(pointer(u_ode),
              (StaticInt(nvariables(equations)), ntuple(_ -> StaticInt(nnodes(dg)), ndims(mesh))..., nelements(dg, cache)))
             #  (nvariables(equations), ntuple(_ -> nnodes(dg), ndims(mesh))..., nelements(dg, cache)))
+  else
+    # The following version is reasonably fast and allows us to `resize!(u_ode, ...)`.
+    unsafe_wrap(Array{eltype(u_ode), ndims(mesh)+2}, pointer(u_ode),
+                (nvariables(equations), ntuple(_ -> nnodes(dg), ndims(mesh))..., nelements(dg, cache)))
+  end
+end
+
+# Finite difference summation by parts (FDSBP) methods
+@inline function wrap_array(u_ode::AbstractVector, mesh::AbstractMesh, equations, dg::FDSBP, cache)
+  @boundscheck begin
+    @assert length(u_ode) == nvariables(equations) * nnodes(dg)^ndims(mesh) * nelements(dg, cache)
+  end
+  # See comments on the DGSEM version above
+  if LoopVectorization.check_args(u_ode)
+    # Here, we do not specialize on the number of nodes using `StaticInt` since
+    # - it will not be type stable (SBP operators just store it as a runtime value)
+    # - FD methods tend to use high node counts
+    PtrArray(pointer(u_ode),
+             (StaticInt(nvariables(equations)), ntuple(_ -> nnodes(dg), ndims(mesh))..., nelements(dg, cache)))
   else
     # The following version is reasonably fast and allows us to `resize!(u_ode, ...)`.
     unsafe_wrap(Array{eltype(u_ode), ndims(mesh)+2}, pointer(u_ode),
@@ -620,25 +686,18 @@ function compute_coefficients!(u, func, t, mesh::AbstractMesh{3}, equations, dg:
 end
 
 
-# Discretizations specific to each mesh type of Trixi
+# Discretizations specific to each mesh type of Trixi.jl
 # If some functionality is shared by multiple combinations of meshes/solvers,
 # it is defined in the directory of the most basic mesh and solver type.
-# The most basic solver type in Trixi is DGSEM (historic reasons and background
+# The most basic solver type in Trixi.jl is DGSEM (historic reasons and background
 # of the main contributors).
 # We consider the `TreeMesh` to be the most basic mesh type since it is Cartesian
-# and was the first mesh in Trixi. The order of the other mesh types is the same
+# and was the first mesh in Trixi.jl. The order of the other mesh types is the same
 # as the include order below.
 include("dgsem_tree/dg.jl")
 include("dgsem_structured/dg.jl")
 include("dgsem_unstructured/dg.jl")
 include("dgsem_p4est/dg.jl")
-
-
-# Finite difference methods using summation by parts (SBP) operators
-# These methods are very similar to DG methods since they also impose interface
-# and boundary conditions weakly. Thus, these methods can re-use a lot of
-# functionality implemented for DGSEM.
-include("fdsbp_tree/fdsbp.jl")
 
 
 end # @muladd

@@ -78,7 +78,7 @@ end
     eachelement(elements::ElementContainer2D)
 
 Return an iterator over the indices that specify the location in relevant data structures
-for the elements in `elements`. 
+for the elements in `elements`.
 In particular, not the elements themselves are returned.
 """
 @inline eachelement(elements::ElementContainer2D) = Base.OneTo(nelements(elements))
@@ -106,7 +106,7 @@ function init_elements!(elements, cell_ids, mesh::TreeMesh2D, basis)
   reference_length = integrate(one ∘ eltype, nodes, basis)
   # Compute the offset of the midpoint of the 1D reference interval
   # (its difference from zero)
-  reference_offset = first(nodes) + reference_length / 2
+  reference_offset = (first(nodes) + last(nodes)) / 2
 
   # Store cell ids
   elements.cell_ids .= cell_ids
@@ -1255,6 +1255,125 @@ function init_mpi_mortars!(mpi_mortars, elements, mesh::TreeMesh2D)
 end
 
 
+# Container data structure (structure-of-arrays style) for FCT-type antidiffusive fluxes
+#                            (i, j+1)
+#                               |
+#                          flux2(i, j+1)
+#                               |
+# (i-1, j) ---flux1(i, j)--- (i, j) ---flux1(i+1, j)--- (i+1, j)
+#                               |
+#                          flux2(i, j)
+#                               |
+#                            (i, j-1)
+mutable struct ContainerAntidiffusiveFlux2D{uEltype<:Real}
+  antidiffusive_flux1::Array{uEltype, 4} # [variables, i, j, elements]
+  antidiffusive_flux2::Array{uEltype, 4} # [variables, i, j, elements]
+   # internal `resize!`able storage
+  _antidiffusive_flux1::Vector{uEltype}
+  _antidiffusive_flux2::Vector{uEltype}
+end
 
+function ContainerAntidiffusiveFlux2D{uEltype}(capacity::Integer, n_variables, n_nodes) where uEltype<:Real
+  nan_uEltype = convert(uEltype, NaN)
+
+  # Initialize fields with defaults
+  _antidiffusive_flux1 = fill(nan_uEltype, n_variables * (n_nodes+1) * n_nodes * capacity)
+  antidiffusive_flux1 = unsafe_wrap(Array, pointer(_antidiffusive_flux1),
+                                    (n_variables, n_nodes+1, n_nodes, capacity))
+
+  _antidiffusive_flux2 = fill(nan_uEltype, n_variables * n_nodes * (n_nodes+1) * capacity)
+  antidiffusive_flux2 = unsafe_wrap(Array, pointer(_antidiffusive_flux2),
+                                    (n_variables, n_nodes, n_nodes+1, capacity))
+
+  return ContainerAntidiffusiveFlux2D{uEltype}(antidiffusive_flux1, antidiffusive_flux2,
+                                               _antidiffusive_flux1, _antidiffusive_flux2)
+end
+
+nvariables(fluxes::ContainerAntidiffusiveFlux2D) = size(fluxes.antidiffusive_flux1, 1)
+nnodes(fluxes::ContainerAntidiffusiveFlux2D) = size(fluxes.antidiffusive_flux1, 3)
+
+# Only one-dimensional `Array`s are `resize!`able in Julia.
+# Hence, we use `Vector`s as internal storage and `resize!`
+# them whenever needed. Then, we reuse the same memory by
+# `unsafe_wrap`ping multi-dimensional `Array`s around the
+# internal storage.
+function Base.resize!(fluxes::ContainerAntidiffusiveFlux2D, capacity)
+  n_nodes = nnodes(fluxes)
+  n_variables = nvariables(fluxes)
+
+  @unpack _antidiffusive_flux1, _antidiffusive_flux2 = fluxes
+
+  resize!(_antidiffusive_flux1, n_variables * (n_nodes+1) * n_nodes * capacity)
+  fluxes.antidiffusive_flux1 = unsafe_wrap(Array, pointer(_antidiffusive_flux1),
+                                           (n_variables, n_nodes+1, n_nodes, capacity))
+  resize!(_antidiffusive_flux2, n_variables * n_nodes * (n_nodes+1) * capacity)
+  fluxes.antidiffusive_flux2 = unsafe_wrap(Array, pointer(_antidiffusive_flux2),
+                                           (n_variables, n_nodes, n_nodes+1, capacity))
+
+  return nothing
+end
+
+
+# Container data structure (structure-of-arrays style) for variables used for IDP limiting
+mutable struct ContainerShockCapturingIndicatorIDP2D{uEltype<:Real}
+  alpha::Array{uEltype, 3}                  # [i, j, element]
+  alpha1::Array{uEltype, 3}
+  alpha2::Array{uEltype, 3}
+  variable_bounds::Vector{Array{uEltype, 3}}
+  # internal `resize!`able storage
+  _alpha::Vector{uEltype}
+  _alpha1::Vector{uEltype}
+  _alpha2::Vector{uEltype}
+  _variable_bounds::Vector{Vector{uEltype}}
+end
+
+function ContainerShockCapturingIndicatorIDP2D{uEltype}(capacity::Integer, n_nodes, number_bounds) where uEltype<:Real
+  nan_uEltype = convert(uEltype, NaN)
+
+  # Initialize fields with defaults
+  _alpha = fill(nan_uEltype, n_nodes * n_nodes * capacity)
+  alpha = unsafe_wrap(Array, pointer(_alpha), (n_nodes, n_nodes, capacity))
+  _alpha1 = fill(nan_uEltype, (n_nodes+1) * n_nodes * capacity)
+  alpha1 = unsafe_wrap(Array, pointer(_alpha1), (n_nodes+1, n_nodes, capacity))
+  _alpha2 = fill(nan_uEltype, n_nodes * (n_nodes+1) * capacity)
+  alpha2 = unsafe_wrap(Array, pointer(_alpha2), (n_nodes, n_nodes+1, capacity))
+
+  _variable_bounds = Vector{Vector{uEltype}}(undef, number_bounds)
+  variable_bounds  = Vector{Array{uEltype, 3}}(undef, number_bounds)
+  for i in 1:number_bounds
+    _variable_bounds[i] = fill(nan_uEltype, n_nodes * n_nodes * capacity)
+    variable_bounds[i] = unsafe_wrap(Array, pointer(_variable_bounds[i]), (n_nodes, n_nodes, capacity))
+  end
+
+  return ContainerShockCapturingIndicatorIDP2D{uEltype}(alpha,  alpha1,  alpha2,  variable_bounds,
+                                                      _alpha, _alpha1, _alpha2, _variable_bounds)
+end
+
+nnodes(indicator::ContainerShockCapturingIndicatorIDP2D) = size(indicator.alpha, 1)
+
+# Only one-dimensional `Array`s are `resize!`able in Julia.
+# Hence, we use `Vector`s as internal storage and `resize!`
+# them whenever needed. Then, we reuse the same memory by
+# `unsafe_wrap`ping multi-dimensional `Array`s around the
+# internal storage.
+function Base.resize!(indicator::ContainerShockCapturingIndicatorIDP2D, capacity)
+  n_nodes = nnodes(indicator)
+
+  @unpack _alpha, _alpha1, _alpha2 = indicator
+  resize!(_alpha, n_nodes * n_nodes * capacity)
+  indicator.alpha = unsafe_wrap(Array, pointer(_alpha), (n_nodes, n_nodes, capacity))
+  resize!(_alpha1, (n_nodes + 1) * n_nodes * capacity)
+  indicator.alpha1 = unsafe_wrap(Array, pointer(_alpha1), (n_nodes + 1, n_nodes, capacity))
+  resize!(_alpha2, n_nodes * (n_nodes + 1) * capacity)
+  indicator.alpha2 = unsafe_wrap(Array, pointer(_alpha2), (n_nodes, n_nodes + 1, capacity))
+
+  @unpack _variable_bounds = indicator
+  for i in 1:length(_variable_bounds)
+    resize!(_variable_bounds[i], n_nodes * n_nodes * capacity)
+    indicator.variable_bounds[i] = unsafe_wrap(Array, pointer(_variable_bounds[i]), (n_nodes, n_nodes, capacity))
+  end
+
+  return nothing
+end
 
 end # @muladd

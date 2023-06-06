@@ -5,7 +5,7 @@
 @muladd begin
 
 
-# Wrapper type for solutions from Trixi's own time integrators, partially mimicking
+# Wrapper type for solutions from Trixi.jl's own time integrators, partially mimicking
 # SciMLBase.ODESolution
 struct TimeIntegratorSolution{tType, uType, P}
   t::tType
@@ -15,6 +15,7 @@ end
 
 include("methods_2N.jl")
 include("methods_3Sstar.jl")
+include("methods_SSP.jl")
 
 
 end # @muladd

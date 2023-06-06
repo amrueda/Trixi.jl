@@ -25,85 +25,71 @@ function create_cache(typ::Type{IndicatorHennemannGassner}, mesh, equations::Abs
 end
 
 
-function (indicator_hg::IndicatorHennemannGassner)(u::AbstractArray{<:Any,4},
-                                                   mesh, equations, dg::DGSEM, cache;
-                                                   kwargs...)
+# Use this function barrier and unpack inside to avoid passing closures to Polyester.jl
+# with @batch (@threaded).
+# Otherwise, @threaded does not work here with Julia ARM on macOS.
+# See https://github.com/JuliaSIMD/Polyester.jl/issues/88.
+@inline function calc_indicator_hennemann_gassner!(indicator_hg, threshold, parameter_s, u,
+                                                   element, mesh::AbstractMesh{2},
+                                                   equations, dg, cache)
   @unpack alpha_max, alpha_min, alpha_smooth, variable = indicator_hg
-  @unpack alpha, alpha_tmp, indicator_threaded, modal_threaded, modal_tmp1_threaded = indicator_hg.cache
-  # TODO: Taal refactor, when to `resize!` stuff changed possibly by AMR?
-  #       Shall we implement `resize!(semi::AbstractSemidiscretization, new_size)`
-  #       or just `resize!` whenever we call the relevant methods as we do now?
-  resize!(alpha, nelements(dg, cache))
-  if alpha_smooth
-    resize!(alpha_tmp, nelements(dg, cache))
+  @unpack alpha, alpha_tmp, indicator_threaded, modal_threaded,
+          modal_tmp1_threaded = indicator_hg.cache
+
+  indicator  = indicator_threaded[Threads.threadid()]
+  modal      = modal_threaded[Threads.threadid()]
+  modal_tmp1 = modal_tmp1_threaded[Threads.threadid()]
+
+  # Calculate indicator variables at Gauss-Lobatto nodes
+  for j in eachnode(dg), i in eachnode(dg)
+    u_local = get_node_vars(u, equations, dg, i, j, element)
+    indicator[i, j] = indicator_hg.variable(u_local, equations)
   end
 
-  # magic parameters
-  threshold = 0.5 * 10^(-1.8 * (nnodes(dg))^0.25)
-  parameter_s = log((1 - 0.0001)/0.0001)
+  # Convert to modal representation
+  multiply_scalar_dimensionwise!(modal, dg.basis.inverse_vandermonde_legendre, indicator, modal_tmp1)
 
-  @threaded for element in eachelement(dg, cache)
-    indicator  = indicator_threaded[Threads.threadid()]
-    modal      = modal_threaded[Threads.threadid()]
-    modal_tmp1 = modal_tmp1_threaded[Threads.threadid()]
-
-    # Calculate indicator variables at Gauss-Lobatto nodes
-    for j in eachnode(dg), i in eachnode(dg)
-      u_local = get_node_vars(u, equations, dg, i, j, element)
-      indicator[i, j] = indicator_hg.variable(u_local, equations)
-    end
-
-    # Convert to modal representation
-    multiply_scalar_dimensionwise!(modal, dg.basis.inverse_vandermonde_legendre, indicator, modal_tmp1)
-
-    # Calculate total energies for all modes, without highest, without two highest
-    total_energy = zero(eltype(modal))
-    for j in 1:nnodes(dg), i in 1:nnodes(dg)
-      total_energy += modal[i, j]^2
-    end
-    total_energy_clip1 = zero(eltype(modal))
-    for j in 1:(nnodes(dg)-1), i in 1:(nnodes(dg)-1)
-      total_energy_clip1 += modal[i, j]^2
-    end
-    total_energy_clip2 = zero(eltype(modal))
-    for j in 1:(nnodes(dg)-2), i in 1:(nnodes(dg)-2)
-      total_energy_clip2 += modal[i, j]^2
-    end
-
-    # Calculate energy in higher modes
-    if !(iszero(total_energy))
-      energy_frac_1 = (total_energy - total_energy_clip1) / total_energy
-    else
-      energy_frac_1 = zero(total_energy)
-    end
-    if !(iszero(total_energy_clip1))
-      energy_frac_2 = (total_energy_clip1 - total_energy_clip2) / total_energy_clip1
-    else
-      energy_frac_2 = zero(total_energy_clip1)
-    end
-    energy = max(energy_frac_1, energy_frac_2)
-
-    alpha_element = 1 / (1 + exp(-parameter_s / threshold * (energy - threshold)))
-
-    # Take care of the case close to pure DG
-    if alpha_element < alpha_min
-      alpha_element = zero(alpha_element)
-    end
-
-    # Take care of the case close to pure FV
-    if alpha_element > 1 - alpha_min
-      alpha_element = one(alpha_element)
-    end
-
-    # Clip the maximum amount of FV allowed
-    alpha[element] = min(alpha_max, alpha_element)
+  # Calculate total energies for all modes, without highest, without two highest
+  total_energy = zero(eltype(modal))
+  for j in 1:nnodes(dg), i in 1:nnodes(dg)
+    total_energy += modal[i, j]^2
+  end
+  total_energy_clip1 = zero(eltype(modal))
+  for j in 1:(nnodes(dg)-1), i in 1:(nnodes(dg)-1)
+    total_energy_clip1 += modal[i, j]^2
+  end
+  total_energy_clip2 = zero(eltype(modal))
+  for j in 1:(nnodes(dg)-2), i in 1:(nnodes(dg)-2)
+    total_energy_clip2 += modal[i, j]^2
   end
 
-  if alpha_smooth
-    apply_smoothing!(mesh, alpha, alpha_tmp, dg, cache)
+  # Calculate energy in higher modes
+  if !(iszero(total_energy))
+    energy_frac_1 = (total_energy - total_energy_clip1) / total_energy
+  else
+    energy_frac_1 = zero(total_energy)
+  end
+  if !(iszero(total_energy_clip1))
+    energy_frac_2 = (total_energy_clip1 - total_energy_clip2) / total_energy_clip1
+  else
+    energy_frac_2 = zero(total_energy_clip1)
+  end
+  energy = max(energy_frac_1, energy_frac_2)
+
+  alpha_element = 1 / (1 + exp(-parameter_s / threshold * (energy - threshold)))
+
+  # Take care of the case close to pure DG
+  if alpha_element < alpha_min
+    alpha_element = zero(alpha_element)
   end
 
-  return alpha
+  # Take care of the case close to pure FV
+  if alpha_element > 1 - alpha_min
+    alpha_element = one(alpha_element)
+  end
+
+  # Clip the maximum amount of FV allowed
+  alpha[element] = min(alpha_max, alpha_element)
 end
 
 
@@ -199,6 +185,100 @@ function (löhner::IndicatorLöhner)(u::AbstractArray{<:Any,4},
 end
 
 
+# this method is used when the indicator is constructed as for shock-capturing volume integrals
+function create_cache(indicator::Type{IndicatorIDP}, equations::AbstractEquations{2}, basis::LobattoLegendreBasis, number_bounds)
+  ContainerShockCapturingIndicator = Trixi.ContainerShockCapturingIndicatorIDP2D{real(basis)}(0, nnodes(basis), number_bounds)
+
+  cache = (; ContainerShockCapturingIndicator)
+
+  return cache
+end
+
+function (indicator::IndicatorIDP)(u::AbstractArray{<:Any,4}, semi, dg::DGSEM, t, dt; kwargs...)
+  @unpack alpha = indicator.cache.ContainerShockCapturingIndicator
+  alpha .= zero(eltype(alpha))
+
+  if indicator.positivity
+    @trixi_timeit timer() "positivity" idp_positivity!(alpha, indicator, u, dt, semi)
+  end
+
+  # Calculate alpha1 and alpha2
+  @unpack alpha1, alpha2 = indicator.cache.ContainerShockCapturingIndicator
+  @threaded for element in eachelement(dg, semi.cache)
+    for j in eachnode(dg), i in 2:nnodes(dg)
+      alpha1[i, j, element] = max(alpha[i-1, j, element], alpha[i, j, element])
+    end
+    for j in 2:nnodes(dg), i in eachnode(dg)
+      alpha2[i, j, element] = max(alpha[i, j-1, element], alpha[i, j, element])
+    end
+    alpha1[1,            :, element] .= zero(eltype(alpha1))
+    alpha1[nnodes(dg)+1, :, element] .= zero(eltype(alpha1))
+    alpha2[:,            1, element] .= zero(eltype(alpha2))
+    alpha2[:, nnodes(dg)+1, element] .= zero(eltype(alpha2))
+  end
+
+  return nothing
+end
+
+@inline function idp_positivity!(alpha, indicator, u, dt, semi)
+  # Conservative variables
+  for (index, variable) in enumerate(indicator.variables_cons)
+    idp_positivity!(alpha, indicator, u, dt, semi, variable, index)
+  end
+
+  return nothing
+end
+
+@inline function idp_positivity!(alpha, indicator, u, dt, semi, variable, index)
+  mesh, equations, dg, cache = mesh_equations_solver_cache(semi)
+  @unpack antidiffusive_flux1, antidiffusive_flux2 = cache.container_antidiffusive_flux
+  @unpack inverse_weights = dg.basis
+  @unpack positivity_correction_factor = indicator
+
+  @unpack variable_bounds = indicator.cache.ContainerShockCapturingIndicator
+
+  var_min = variable_bounds[index]
+
+  @threaded for element in eachelement(dg, semi.cache)
+    inverse_jacobian = cache.elements.inverse_jacobian[element]
+    for j in eachnode(dg), i in eachnode(dg)
+      var = variable(get_node_vars(u, equations, dg, i, j, element), equations)
+      if var < 0
+        error("Safe $variable is not safe. element=$element, node: $i $j, value=$var")
+      end
+
+      # Compute bound
+      var_min[i, j, element] = positivity_correction_factor * var
+
+      # Real one-sided Zalesak-type limiter
+      # * Zalesak (1979). "Fully multidimensional flux-corrected transport algorithms for fluids"
+      # * Kuzmin et al. (2010). "Failsafe flux limiting and constrained data projections for equations of gas dynamics"
+      # Note: The Zalesak limiter has to be computed, even if the state is valid, because the correction is
+      #       for each interface, not each node
+      Qm = min(0, (var_min[i, j, element] - var) / dt)
+
+      # Calculate Pm
+      # Note: Boundaries of antidiffusive_flux1/2 are constant 0, so they make no difference here.
+      val_flux1_local     =  inverse_weights[i] * variable(get_node_vars(antidiffusive_flux1, equations, dg,   i,   j, element), equations)
+      val_flux1_local_ip1 = -inverse_weights[i] * variable(get_node_vars(antidiffusive_flux1, equations, dg, i+1,   j, element), equations)
+      val_flux2_local     =  inverse_weights[j] * variable(get_node_vars(antidiffusive_flux2, equations, dg,   i,   j, element), equations)
+      val_flux2_local_jp1 = -inverse_weights[j] * variable(get_node_vars(antidiffusive_flux2, equations, dg,   i, j+1, element), equations)
+
+      Pm = min(0, val_flux1_local) + min(0, val_flux1_local_ip1) +
+           min(0, val_flux2_local) + min(0, val_flux2_local_jp1)
+      Pm = inverse_jacobian * Pm
+
+      # Compute blending coefficient avoiding division by zero
+      # (as in paper of [Guermond, Nazarov, Popov, Thomas] (4.8))
+      Qm = abs(Qm) / (abs(Pm) + eps(typeof(Qm)) * 100)
+
+      # Calculate alpha
+      alpha[i, j, element]  = max(alpha[i, j, element], 1 - Qm)
+    end
+  end
+
+  return nothing
+end
 
 # this method is used when the indicator is constructed as for shock-capturing volume integrals
 function create_cache(::Type{IndicatorMax}, equations::AbstractEquations{2}, basis::LobattoLegendreBasis)
