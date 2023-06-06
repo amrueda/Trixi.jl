@@ -32,24 +32,24 @@ function initial_condition_orszag_tang(x, t, equations::IdealMhdMultiIonEquation
   B3 = 0.0
   
   rho1 = zero(x[1])
-  if x[2] > 0.75
-    rho1 = 0.49 * (tanh(50 * (x[2] - 1.0)) + 1) + 0.02
-  elseif x[2] > 0.25
-    rho1 = 0.49 * (-tanh(50 * (x[2] - 0.5)) + 1) + 0.02
+  if x[1] > 0.75
+    rho1 = 0.49 * (tanh(50 * (x[1] - 1.0)) + 1) + 0.02
+  elseif x[1] > 0.25
+    rho1 = 0.49 * (-tanh(50 * (x[1] - 0.5)) + 1) + 0.02
   else
-    rho1 = 0.49 * (tanh(50 * (x[2])) + 1) + 0.02
+    rho1 = 0.49 * (tanh(50 * (x[1])) + 1) + 0.02
   end
 
-  if x[2] < 0.25
-    rho2 = 0.49 * (-tanh(50 * (x[2])) + 1) + 0.02
-  elseif x[2] < 0.75
-    rho2 = 0.49 * (tanh(50 * (x[2] - 0.5)) + 1) + 0.02
+  if x[1] < 0.25
+    rho2 = 0.49 * (-tanh(50 * (x[1])) + 1) + 0.02
+  elseif x[1] < 0.75
+    rho2 = 0.49 * (tanh(50 * (x[1] - 0.5)) + 1) + 0.02
   else
-    rho2 = 0.49 * (-tanh(50 * (x[2] - 1.0)) + 1) + 0.02
+    rho2 = 0.49 * (-tanh(50 * (x[1] - 1.0)) + 1) + 0.02
   end
 
-  p1 = T # * rho1
-  p2 = T # * rho2
+  p1 = T * rho1
+  p2 = T * rho2
 
   return prim2cons(SVector(B1, B2, B3, rho1, v1, v2, v3, p1, rho2, v1, v2, v3, p2), equations)
 
@@ -81,12 +81,13 @@ mesh = TreeMesh(coordinates_min, coordinates_max,
 
 semi = SemidiscretizationHyperbolic(mesh, equations, initial_condition, solver,
                                     source_terms=source_terms_collision_ion_ion)
+                                    #source_terms=source_terms_standard)
 
 
 ###############################################################################
 # ODE solvers, callbacks etc.
 
-tspan = (0.0, 1.0)
+tspan = (0.0, 0.5)
 ode = semidiscretize(semi, tspan)
 
 summary_callback = SummaryCallback()
@@ -95,7 +96,7 @@ analysis_interval = 100
 analysis_callback = AnalysisCallback(semi, interval=analysis_interval)
 alive_callback = AliveCallback(analysis_interval=analysis_interval)
 
-save_solution = SaveSolutionCallback(interval=10,
+save_solution = SaveSolutionCallback(interval=100,
                                      save_initial_solution=true,
                                      save_final_solution=true,
                                      solution_variables=cons2prim)
