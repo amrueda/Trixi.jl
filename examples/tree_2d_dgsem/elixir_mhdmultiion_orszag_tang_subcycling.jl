@@ -117,7 +117,7 @@ stage_callbacks = (SubCyclingSource(),)
 # TODO: Specify source here: source_terms_collision_ion_ion
                             #source_terms_standard)
 
-sol = Trixi.solve(ode, alg=Trixi.SimpleSSPRK33(stage_callbacks = stage_callbacks);
+sol = Trixi.solve(ode, Trixi.SimpleSSPRK33(stage_callbacks = stage_callbacks);
             dt=1.0, # solve needs some value here but it will be overwritten by the stepsize_callback
             save_everystep=false, callback=callbacks);
 

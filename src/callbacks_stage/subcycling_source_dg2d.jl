@@ -14,7 +14,6 @@
 struct SubCyclingSource end
 
 function (perform_subcycling!::SubCyclingSource)(u_ode, integrator, stage)
-
   perform_subcycling!(u_ode, integrator.p, integrator.t, integrator.dt)
 end
 
@@ -24,15 +23,14 @@ function (perform_subcycling!::SubCyclingSource)(u_ode, semi, t, dt)
 
   u = wrap_array(u_ode, mesh, equations, solver, cache)
 
-  perform_subcycling!(u, dt, mesh, equations, solver, cache)
+  perform_subcycling!(u, t, dt, mesh, equations, solver, cache)
 
   return nothing
 end
 
-function (perform_subcycling!::SubCyclingSource)(u, dt, mesh::AbstractMesh{2}, equations, dg, cache)
+function (perform_subcycling!::SubCyclingSource)(u, t, dt, mesh::AbstractMesh{2}, equations, dg, cache)
   max_iter = 1_000_000
   tol = 1.0e-10
-  println("subcycling")
 
   @threaded for element in eachelement(dg, cache)
     
@@ -43,16 +41,15 @@ function (perform_subcycling!::SubCyclingSource)(u, dt, mesh::AbstractMesh{2}, e
       
       for iter in 1:max_iter
         u_np1 = get_node_vars(u, equations, dg, i, j, element)
-        du_local = source_terms_collision(u_np1, x_local, t, equations) 
-        
-        for v in eachvariable(equations)
-          u[v, i, j, element] = u_n[v] + dt * du_local[v]
-        end
+        du_local = source_terms_collision_ion_ion(u_np1, x_local, t, equations) 
+        u_new = u_n + dt * du_local
+        set_node_vars!(u, u_new, equations, dg, i, j, element)
 
         # Check if the subcycling converged
-        println(string(iter), " ", string(maximum(abs.(u[:, i, j, element] - u_np1))))
-        if maximum(abs.(u[:, i, j, element] - u_np1)) < tol
+        if maximum(abs.(u_new - u_np1)) < tol
           break
+        elseif iter == max_iter
+          println("Subcycling did not converge")
         end
       end
     end
