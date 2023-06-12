@@ -321,12 +321,11 @@ function source_terms_collision_ion_ion(u, x, t, equations::IdealMhdMultiIonEqua
   S_std = source_terms_standard(u, x ,t, equations)
 
   s = zero(MVector{nvariables(equations), eltype(u)})
-  @unpack gammas, charge_to_mass, gas_constants, molar_masses, collision_frequency = equations
+  @unpack gammas, gas_constants, molar_masses, collision_frequency = equations
   
   prim = cons2prim(u, equations)
 
   for k in eachcomponent(equations)
-    # todo add index _k everywhere
     rho, v1, v2, v3, p = get_component(k, prim, equations)
     T = p / (rho * gas_constants[k])
     
@@ -339,11 +338,11 @@ function source_terms_collision_ion_ion(u, x, t, equations::IdealMhdMultiIonEqua
       T_l = p_l / (rho_l * gas_constants[l])
 
       # Compute effective collision frequency
-      v_kl = collision_frequency * (rho_l * molar_masses[1] / molar_masses[l])^(5/2) / p_l^(3/2)
+      v_kl = collision_frequency * (rho_l * molar_masses[1] / molar_masses[l])^(5/2) * (gas_constants[l] / p_l)^(3/2)
 
-      S_q1 += v_kl * (v1_l - v1)
-      S_q2 += v_kl * (v2_l - v2)
-      S_q3 += v_kl * (v3_l - v3)
+      S_q1 += rho * v_kl * (v1_l - v1)
+      S_q2 += rho * v_kl * (v2_l - v2)
+      S_q3 += rho * v_kl * (v3_l - v3)
 
       S_E += (3 * molar_masses[1] * gas_constants[1] * (T_l - T) 
               + molar_masses[l] * ((v1_l - v1)^2 + (v2_l - v2)^2 + (v3_l - v3)^2)) * v_kl * rho / (molar_masses[k] + molar_masses[l])
