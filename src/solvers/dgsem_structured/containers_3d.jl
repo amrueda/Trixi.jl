@@ -245,19 +245,121 @@ end
 """
 New function to compute contravariant vectors
 """
-function calc_contravariant_vectors!(contravariant_vectors::AbstractArray{<:Any, 6},
+function calc_contravariant_vectors_mimetic!(contravariant_vectors::AbstractArray{<:Any, 6},
     element,
     jacobian_matrix, node_coordinates,
     basis::LobattoLegendreBasis)
     @unpack derivative_matrix = basis
 
-    # Edge basis functions
-    V = zeros(Float64, polydeg(basis) + 1, polydeg(basis))
+    # Define histopolation (edge) basis functions: V[i,j] = hⱼ(ξᵢ) ... TODO: initialize beforehand...
+    V = zero(MMatrix{polydeg(basis) + 1, polydeg(basis), eltype(derivative_matrix)})
     for j in 1:polydeg(basis)
         for i in 1:polydeg(basis)+1
             for k in 1:j
                 V[i, j] -= derivative_matrix[i, k]
             end
+        end
+    end
+
+    # Project the mapping potential \vec{g} \in H_{curl} to \vec{G} \in V_1
+    Gbar = zeros(3, 3, nnodes(basis), nnodes(basis), nnodes(basis), eltype(derivative_matrix)) # Attention: here I'm allocating N+1 nodes in each direction. We only need N in some directions!!
+    # ( here we compute Gbar[:, :, i, j, k] )
+
+    # Evaluate the mapping potential at the Lagrange points
+    G = zeros(3, 3, nnodes(basis), nnodes(basis), nnodes(basis), eltype(derivative_matrix))
+    for k in eachnode(basis)
+        for j in eachnode(basis)
+            for i in eachnode(basis)
+                for ii in 1:polydeg(basis)
+                    G[:, 1, i, j, k] = Gbar[:, 1, ii, j, k] * V[i, ii]
+                    G[:, 2, i, j, k] = Gbar[:, 2, i, ii, k] * V[j, ii]
+                    G[:, 3, i, j, k] = Gbar[:, 3, i, j, ii] * V[k, ii]
+                end
+            end
+        end
+    end
+
+    # Compute the contravariant vectors as the curl of the mapping potential (at the discrete level!)
+    # Jaⁱₙ = ( ∇ × gₙ )ᵢ  where ∇ = (∂/∂ξ, ∂/∂η, ∂/∂ζ)ᵀ
+    for n in 1:3
+        # Calculate Ja¹ₙ = (g³ₙ)_η - (g²ₙ)_ζ
+        # For each of these, the first and second summand are computed in separate loops
+        # for performance reasons.
+
+        # First summand (g³ₙ)_η
+        @turbo for k in eachnode(basis), j in eachnode(basis), i in eachnode(basis)
+            result = zero(eltype(contravariant_vectors))
+
+            for ii in eachnode(basis)
+                # Multiply derivative_matrix to j-dimension to differentiate wrt η
+                result += derivative_matrix[j, ii] * G[n, 1, i, ii, k]
+            end
+
+            contravariant_vectors[n, 1, i, j, k, element] = result
+        end
+
+        # Second summand -(g²ₙ)_ζ
+        @turbo for k in eachnode(basis), j in eachnode(basis), i in eachnode(basis)
+            result = zero(eltype(contravariant_vectors))
+
+            for ii in eachnode(basis)
+                # Multiply derivative_matrix to k-dimension to differentiate wrt ζ
+                result += derivative_matrix[k, ii] * G[n, 2, i, j, ii]
+            end
+
+            contravariant_vectors[n, 1, i, j, k, element] -= result
+        end
+
+        # Calculate Ja²ₙ =(g¹ₙ)_ζ - (g³ₙ)_ξ
+
+        # First summand (g¹ₙ)_ζ
+        @turbo for k in eachnode(basis), j in eachnode(basis), i in eachnode(basis)
+            result = zero(eltype(contravariant_vectors))
+
+            for ii in eachnode(basis)
+                # Multiply derivative_matrix to k-dimension to differentiate wrt ζ
+                result += derivative_matrix[k, ii] * G[n, 1, i, j, ii]
+            end
+
+            contravariant_vectors[n, 2, i, j, k, element] = result
+        end
+
+        # Second summand -(g³ₙ)_ξ
+        @turbo for k in eachnode(basis), j in eachnode(basis), i in eachnode(basis)
+            result = zero(eltype(contravariant_vectors))
+
+            for ii in eachnode(basis)
+                # Multiply derivative_matrix to i-dimension to differentiate wrt ξ
+                result += derivative_matrix[i, ii] * G[n, 3, ii, j, k]
+            end
+
+            contravariant_vectors[n, 2, i, j, k, element] -= result
+        end
+
+        # Calculate Ja³ₙ = (g²ₙ)_ξ - (g¹ₙ)_η
+
+        # First summand (g²ₙ)_ξ
+        @turbo for k in eachnode(basis), j in eachnode(basis), i in eachnode(basis)
+            result = zero(eltype(contravariant_vectors))
+
+            for ii in eachnode(basis)
+                # Multiply derivative_matrix to i-dimension to differentiate wrt ξ
+                result += derivative_matrix[i, ii] * G[n, 2, ii, j, k]
+            end
+
+            contravariant_vectors[n, 3, i, j, k, element] = result
+        end
+
+        # Second summand -(g¹ₙ)_η
+        @turbo for k in eachnode(basis), j in eachnode(basis), i in eachnode(basis)
+            result = zero(eltype(contravariant_vectors))
+
+            for ii in eachnode(basis)
+                # Multiply derivative_matrix to j-dimension to differentiate wrt η
+                result += derivative_matrix[j, ii] * G[n, 1, i, ii, k]
+            end
+
+            contravariant_vectors[n, 3, i, j, k, element] -= result
         end
     end
 end
