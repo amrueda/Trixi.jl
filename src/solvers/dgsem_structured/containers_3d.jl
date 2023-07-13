@@ -263,7 +263,13 @@ function calc_contravariant_vectors_mimetic!(contravariant_vectors::AbstractArra
 
     # Project the mapping potential \vec{g} \in H_{curl} to \vec{G} \in V_1
     Gbar = zeros(3, 3, nnodes(basis), nnodes(basis), nnodes(basis), eltype(derivative_matrix)) # Attention: here I'm allocating N+1 nodes in each direction. We only need N in some directions!!
-    # ( here we compute Gbar[:, :, i, j, k] )
+    for k in eachnode(basis)
+        for j in eachnode(basis)
+            for i in eachnode(basis)
+                #G[1, 1, ]
+            end
+        end
+    end
 
     # Evaluate the mapping potential at the Lagrange points
     G = zeros(3, 3, nnodes(basis), nnodes(basis), nnodes(basis), eltype(derivative_matrix))
@@ -292,7 +298,7 @@ function calc_contravariant_vectors_mimetic!(contravariant_vectors::AbstractArra
 
             for ii in eachnode(basis)
                 # Multiply derivative_matrix to j-dimension to differentiate wrt η
-                result += derivative_matrix[j, ii] * G[n, 1, i, ii, k]
+                result += derivative_matrix[j, ii] * G[n, 3, i, ii, k]
             end
 
             contravariant_vectors[n, 1, i, j, k, element] = result
@@ -362,6 +368,8 @@ function calc_contravariant_vectors_mimetic!(contravariant_vectors::AbstractArra
             contravariant_vectors[n, 3, i, j, k, element] -= result
         end
     end
+
+    return contravariant_vectors
 end
 
 theta(xi, eta, zeta) = 0.1 * cos(pi * xi) * cos(pi * eta) * cos(pi * zeta) 

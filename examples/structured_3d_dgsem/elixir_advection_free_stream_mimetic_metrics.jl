@@ -13,7 +13,7 @@ solver = DGSEM(20, flux_lax_friedrichs)
 
 # Mapping as described in https://arxiv.org/abs/2012.12040
 function mapping(xi, eta, zeta)
-  # Transform input variables between -1 and 1 onto [0,3]
+  # Transform input variables between -1 and 1 onto our crazy domain
 
   y = eta + 0.1 * (cos(pi * xi) *
                    cos(pi * eta) *
