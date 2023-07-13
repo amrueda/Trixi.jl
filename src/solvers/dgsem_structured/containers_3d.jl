@@ -120,7 +120,7 @@ end
 # Calculate contravariant vectors, multiplied by the Jacobian determinant J of the transformation mapping,
 # using the invariant curl form.
 # These are called Ja^i in Kopriva's blue book.
-function calc_contravariant_vectors!(contravariant_vectors::AbstractArray{<:Any, 6},
+function calc_contravariant_vectors_standard!(contravariant_vectors::AbstractArray{<:Any, 6},
                                      element,
                                      jacobian_matrix, node_coordinates,
                                      basis::LobattoLegendreBasis)
@@ -245,12 +245,14 @@ end
 """
 New function to compute contravariant vectors
 """
-function calc_contravariant_vectors_mimetic!(contravariant_vectors::AbstractArray{<:Any, 6},
+function calc_contravariant_vectors!(contravariant_vectors::AbstractArray{<:Any, 6},
     element,
     jacobian_matrix, node_coordinates,
     basis::LobattoLegendreBasis)
     @unpack derivative_matrix, nodes = basis
 
+
+    println("Hello world ;)")
     # Define histopolation (edge) basis functions: V[i,j] = hⱼ(ξᵢ) ... TODO: initialize beforehand...
     V = zero(MMatrix{polydeg(basis) + 1, polydeg(basis), eltype(derivative_matrix)})
     for j in 1:polydeg(basis)
@@ -262,7 +264,7 @@ function calc_contravariant_vectors_mimetic!(contravariant_vectors::AbstractArra
     end
 
     # Project the mapping potential \vec{g} \in H_{curl} to \vec{G} \in V_1
-    Gbar = zeros(3, 3, nnodes(basis), nnodes(basis), nnodes(basis), eltype(derivative_matrix)) # Attention: here I'm allocating N+1 nodes in each direction. We only need N in some directions!!
+    Gbar = zeros(eltype(derivative_matrix), 3, 3, nnodes(basis), nnodes(basis), nnodes(basis)) # Attention: here I'm allocating N+1 nodes in each direction. We only need N in some directions!!
     for k in eachnode(basis)
         for j in eachnode(basis)
             for i in 1:polydeg(basis)
@@ -310,7 +312,7 @@ function calc_contravariant_vectors_mimetic!(contravariant_vectors::AbstractArra
     end
 
     # Evaluate the mapping potential at the Lagrange points
-    G = zeros(3, 3, nnodes(basis), nnodes(basis), nnodes(basis), eltype(derivative_matrix))
+    G = zeros(eltype(derivative_matrix), 3, 3, nnodes(basis), nnodes(basis), nnodes(basis))
     for k in eachnode(basis)
         for j in eachnode(basis)
             for i in eachnode(basis)

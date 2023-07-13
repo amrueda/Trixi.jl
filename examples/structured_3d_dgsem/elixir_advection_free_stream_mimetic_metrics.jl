@@ -9,7 +9,7 @@ advection_velocity = (0.2, -0.7, 0.5)
 equations = LinearScalarAdvectionEquation3D(advection_velocity)
 
 # Create DG solver with polynomial degree = 3 and (local) Lax-Friedrichs/Rusanov flux as surface flux
-solver = DGSEM(20, flux_lax_friedrichs)
+solver = DGSEM(10, flux_lax_friedrichs)
 
 # Mapping as described in https://arxiv.org/abs/2012.12040
 function mapping(xi, eta, zeta)
@@ -30,7 +30,7 @@ function mapping(xi, eta, zeta)
   return SVector(x, y, z)
 end
 
-cells_per_dimension = (1, 1, 1)
+cells_per_dimension = (1,1,1)
 
 # Create curved mesh with 8 x 8 x 8 elements
 mesh = StructuredMesh(cells_per_dimension, mapping)
@@ -57,7 +57,7 @@ save_solution = SaveSolutionCallback(interval=100,
                                      solution_variables=cons2prim)
 
 # The StepsizeCallback handles the re-calculation of the maximum Δt after each time step
-stepsize_callback = StepsizeCallback(cfl=2.0)
+stepsize_callback = StepsizeCallback(cfl=0.1)
 
 # Create a CallbackSet to collect all callbacks such that they can be passed to the ODE solver
 callbacks = CallbackSet(summary_callback, analysis_callback, save_solution, stepsize_callback)
