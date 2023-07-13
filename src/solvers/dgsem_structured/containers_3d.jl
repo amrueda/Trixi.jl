@@ -317,18 +317,18 @@ function calc_contravariant_vectors!(contravariant_vectors::AbstractArray{<:Any,
         for j in eachnode(basis)
             for i in eachnode(basis)
                 for ii in 1:polydeg(basis)
-                    G[:, 1, i, j, k] = Gbar[:, 1, ii, j, k] * V[i, ii]
-                    G[:, 2, i, j, k] = Gbar[:, 2, i, ii, k] * V[j, ii]
-                    G[:, 3, i, j, k] = Gbar[:, 3, i, j, ii] * V[k, ii]
+                    G[:, 1, i, j, k] += Gbar[:, 1, ii, j, k] * V[i, ii]
+                    G[:, 2, i, j, k] += Gbar[:, 2, i, ii, k] * V[j, ii]
+                    G[:, 3, i, j, k] += Gbar[:, 3, i, j, ii] * V[k, ii]
                 end
             end
         end
     end
 
     # Compute the contravariant vectors as the curl of the mapping potential (at the discrete level!)
-    # Jaⁱₙ = ( ∇ × gₙ )ᵢ  where ∇ = (∂/∂ξ, ∂/∂η, ∂/∂ζ)ᵀ
+    # Jaⁱₙ = -( ∇ × gₙ )ᵢ  where ∇ = (∂/∂ξ, ∂/∂η, ∂/∂ζ)ᵀ
     for n in 1:3
-        # Calculate Ja¹ₙ = (g³ₙ)_η - (g²ₙ)_ζ
+        # Calculate Ja¹ₙ = -(g³ₙ)_η + (g²ₙ)_ζ
         # For each of these, the first and second summand are computed in separate loops
         # for performance reasons.
 
@@ -341,7 +341,7 @@ function calc_contravariant_vectors!(contravariant_vectors::AbstractArray{<:Any,
                 result += derivative_matrix[j, ii] * G[n, 3, i, ii, k]
             end
 
-            contravariant_vectors[n, 1, i, j, k, element] = result
+            contravariant_vectors[n, 1, i, j, k, element] = -result
         end
 
         # Second summand -(g²ₙ)_ζ
@@ -353,10 +353,10 @@ function calc_contravariant_vectors!(contravariant_vectors::AbstractArray{<:Any,
                 result += derivative_matrix[k, ii] * G[n, 2, i, j, ii]
             end
 
-            contravariant_vectors[n, 1, i, j, k, element] -= result
+            contravariant_vectors[n, 1, i, j, k, element] += result
         end
 
-        # Calculate Ja²ₙ =(g¹ₙ)_ζ - (g³ₙ)_ξ
+        # Calculate Ja²ₙ = -(g¹ₙ)_ζ + (g³ₙ)_ξ
 
         # First summand (g¹ₙ)_ζ
         @turbo for k in eachnode(basis), j in eachnode(basis), i in eachnode(basis)
@@ -367,7 +367,7 @@ function calc_contravariant_vectors!(contravariant_vectors::AbstractArray{<:Any,
                 result += derivative_matrix[k, ii] * G[n, 1, i, j, ii]
             end
 
-            contravariant_vectors[n, 2, i, j, k, element] = result
+            contravariant_vectors[n, 2, i, j, k, element] = -result
         end
 
         # Second summand -(g³ₙ)_ξ
@@ -379,10 +379,10 @@ function calc_contravariant_vectors!(contravariant_vectors::AbstractArray{<:Any,
                 result += derivative_matrix[i, ii] * G[n, 3, ii, j, k]
             end
 
-            contravariant_vectors[n, 2, i, j, k, element] -= result
+            contravariant_vectors[n, 2, i, j, k, element] += result
         end
 
-        # Calculate Ja³ₙ = (g²ₙ)_ξ - (g¹ₙ)_η
+        # Calculate Ja³ₙ = -(g²ₙ)_ξ + (g¹ₙ)_η
 
         # First summand (g²ₙ)_ξ
         @turbo for k in eachnode(basis), j in eachnode(basis), i in eachnode(basis)
@@ -393,7 +393,7 @@ function calc_contravariant_vectors!(contravariant_vectors::AbstractArray{<:Any,
                 result += derivative_matrix[i, ii] * G[n, 2, ii, j, k]
             end
 
-            contravariant_vectors[n, 3, i, j, k, element] = result
+            contravariant_vectors[n, 3, i, j, k, element] = -result
         end
 
         # Second summand -(g¹ₙ)_η
@@ -405,7 +405,7 @@ function calc_contravariant_vectors!(contravariant_vectors::AbstractArray{<:Any,
                 result += derivative_matrix[j, ii] * G[n, 1, i, ii, k]
             end
 
-            contravariant_vectors[n, 3, i, j, k, element] -= result
+            contravariant_vectors[n, 3, i, j, k, element] += result
         end
     end
 
