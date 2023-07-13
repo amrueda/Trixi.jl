@@ -242,6 +242,31 @@ function calc_contravariant_vectors!(contravariant_vectors::AbstractArray{<:Any,
     return contravariant_vectors
 end
 
+"""
+New function to compute contravariant vectors
+"""
+function calc_contravariant_vectors!(contravariant_vectors::AbstractArray{<:Any, 6},
+    element,
+    jacobian_matrix, node_coordinates,
+    basis::LobattoLegendreBasis)
+    @unpack derivative_matrix = basis
+
+    # Edge basis functions
+    V = zeros(Float64, polydeg(basis) + 1, polydeg(basis))
+    for j in 1:polydeg(basis)
+        for i in 1:polydeg(basis)+1
+            for k in 1:j
+                V[i, j] -= derivative_matrix[i, k]
+            end
+        end
+    end
+end
+
+theta(xi, eta, zeta) = 0.1 * cos(pi * xi) * cos(pi * eta) * cos(pi * zeta) 
+theta_int1(xi, eta, zeta) = (0.1 / pi) * sin(pi * xi) * cos(pi * eta) * cos(pi * zeta) 
+theta_int2(xi, eta, zeta) = (0.1 / pi) * cos(pi * xi) * sin(pi * eta) * cos(pi * zeta) 
+theta_int3(xi, eta, zeta) = (0.1 / pi) * cos(pi * xi) * cos(pi * eta) * sin(pi * zeta) 
+
 # Calculate inverse Jacobian (determinant of Jacobian matrix of the mapping) in each node
 function calc_inverse_jacobian!(inverse_jacobian::AbstractArray{<:Any, 4}, element,
                                 jacobian_matrix, basis)
