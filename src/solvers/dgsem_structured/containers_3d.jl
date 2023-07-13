@@ -21,8 +21,13 @@ function init_elements!(elements, mesh::StructuredMesh{3}, basis::LobattoLegendr
 
         calc_jacobian_matrix!(jacobian_matrix, element, node_coordinates, basis)
 
-        calc_contravariant_vectors!(contravariant_vectors, element, jacobian_matrix,
-                                    node_coordinates, basis)
+        if mesh.mimetic
+            calc_contravariant_vectors_mimetic!(contravariant_vectors, element, jacobian_matrix,
+                                                 node_coordinates, basis)
+        else
+            calc_contravariant_vectors_standard!(contravariant_vectors, element, jacobian_matrix,
+                                                 node_coordinates, basis)
+        end
 
         calc_inverse_jacobian!(inverse_jacobian, element, jacobian_matrix, basis)
     end
@@ -245,14 +250,12 @@ end
 """
 New function to compute contravariant vectors
 """
-function calc_contravariant_vectors!(contravariant_vectors::AbstractArray{<:Any, 6},
+function calc_contravariant_vectors_mimetic!(contravariant_vectors::AbstractArray{<:Any, 6},
     element,
     jacobian_matrix, node_coordinates,
     basis::LobattoLegendreBasis)
     @unpack derivative_matrix, nodes = basis
 
-
-    println("Hello world ;)")
     # Define histopolation (edge) basis functions: V[i,j] = hⱼ(ξᵢ) ... TODO: initialize beforehand...
     V = zero(MMatrix{polydeg(basis) + 1, polydeg(basis), eltype(derivative_matrix)})
     for j in 1:polydeg(basis)

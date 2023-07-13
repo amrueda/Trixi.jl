@@ -20,6 +20,7 @@ mutable struct StructuredMesh{NDIMS, RealT <: Real} <: AbstractMesh{NDIMS}
     periodicity::NTuple{NDIMS, Bool}
     current_filename::String
     unsaved_changes::Bool
+    mimetic::Bool
 end
 
 """
@@ -44,6 +45,7 @@ Create a StructuredMesh of the given size and shape that uses `RealT` as coordin
                                This will be changed in the future, see [https://github.com/trixi-framework/Trixi.jl/issues/541](https://github.com/trixi-framework/Trixi.jl/issues/541).
 """
 function StructuredMesh(cells_per_dimension, mapping; RealT = Float64,
+                        mimetic = false,
                         periodicity = true, unsaved_changes = true,
                         mapping_as_string = mapping2string(mapping,
                                                            length(cells_per_dimension)))
@@ -63,7 +65,7 @@ function StructuredMesh(cells_per_dimension, mapping; RealT = Float64,
 
     return StructuredMesh{NDIMS, RealT}(Tuple(cells_per_dimension), mapping,
                                         mapping_as_string, periodicity, "",
-                                        unsaved_changes)
+                                        unsaved_changes, mimetic)
 end
 
 """
