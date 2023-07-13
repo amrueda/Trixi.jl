@@ -249,7 +249,7 @@ function calc_contravariant_vectors_mimetic!(contravariant_vectors::AbstractArra
     element,
     jacobian_matrix, node_coordinates,
     basis::LobattoLegendreBasis)
-    @unpack derivative_matrix = basis
+    @unpack derivative_matrix, nodes = basis
 
     # Define histopolation (edge) basis functions: V[i,j] = hⱼ(ξᵢ) ... TODO: initialize beforehand...
     V = zero(MMatrix{polydeg(basis) + 1, polydeg(basis), eltype(derivative_matrix)})
@@ -265,8 +265,46 @@ function calc_contravariant_vectors_mimetic!(contravariant_vectors::AbstractArra
     Gbar = zeros(3, 3, nnodes(basis), nnodes(basis), nnodes(basis), eltype(derivative_matrix)) # Attention: here I'm allocating N+1 nodes in each direction. We only need N in some directions!!
     for k in eachnode(basis)
         for j in eachnode(basis)
+            for i in 1:polydeg(basis)
+                Gbar[1, 1, i, j, k] = (nodes[k] * (theta(nodes[i+1], nodes[j], nodes[k]) - theta(nodes[i], nodes[j], nodes[k]) )
+                                       + 0.5 * (theta(nodes[i+1], nodes[j], nodes[k])^2 - theta(nodes[i], nodes[j], nodes[k])^2 ) )
+                Gbar[2, 1, i, j, k] = (nodes[i+1] * theta(nodes[i+1], nodes[j], nodes[k]) - nodes[i] * theta(nodes[i], nodes[j], nodes[k]) 
+                                       + 0.5 * (theta(nodes[i+1], nodes[j], nodes[k])^2 - theta(nodes[i], nodes[j], nodes[k])^2 ) 
+                                       - (theta_int1(nodes[i+1], nodes[j], nodes[k]) - theta_int1(nodes[i], nodes[j], nodes[k])))
+                Gbar[3, 1, i, j, k] = ( nodes[j] * (nodes[i+1] - nodes[i])
+                                       + nodes[j] * ( theta(nodes[i+1], nodes[j], nodes[k]) - theta(nodes[i], nodes[j], nodes[k]) )
+                                       + 0.5 * (theta(nodes[i+1], nodes[j], nodes[k])^2 - theta(nodes[i], nodes[j], nodes[k])^2 ) 
+                                       + (theta_int1(nodes[i+1], nodes[j], nodes[k]) - theta_int1(nodes[i], nodes[j], nodes[k])))
+            end
+        end
+    end
+    for k in eachnode(basis)
+        for j in 1:polydeg(basis)
             for i in eachnode(basis)
-                #G[1, 1, ]
+                Gbar[1, 2, i, j, k] = ( nodes[k] * (nodes[j+1] - nodes[j])
+                                        + nodes[k] * ( theta(nodes[i], nodes[j+1], nodes[k]) - theta(nodes[i], nodes[j], nodes[k]) )
+                                        + 0.5 * (theta(nodes[i], nodes[j+1], nodes[k])^2 - theta(nodes[i], nodes[j], nodes[k])^2 ) 
+                                        + (theta_int2(nodes[i], nodes[j+1], nodes[k]) - theta_int2(nodes[i], nodes[j], nodes[k])))
+                Gbar[2, 2, i, j, k] = (nodes[i] * (theta(nodes[i], nodes[j+1], nodes[k]) - theta(nodes[i], nodes[j], nodes[k]) )
+                                       + 0.5 * (theta(nodes[i], nodes[j+1], nodes[k])^2 - theta(nodes[i], nodes[j], nodes[k])^2 ) )
+                Gbar[3, 2, i, j, k] = (nodes[j+1] * theta(nodes[i], nodes[j+1], nodes[k]) - nodes[j] * theta(nodes[i], nodes[j], nodes[k]) 
+                                        + 0.5 * (theta(nodes[i], nodes[j+1], nodes[k])^2 - theta(nodes[i], nodes[j], nodes[k])^2 ) 
+                                        - (theta_int2(nodes[i], nodes[j+1], nodes[k]) - theta_int2(nodes[i], nodes[j], nodes[k])))
+            end
+        end
+    end
+    for k in 1:polydeg(basis)
+        for j in eachnode(basis)
+            for i in eachnode(basis)
+                Gbar[1, 3, i, j, k] = (nodes[k+1] * theta(nodes[i], nodes[j], nodes[k+1]) - nodes[k] * theta(nodes[i], nodes[j], nodes[k]) 
+                                        + 0.5 * (theta(nodes[i], nodes[j], nodes[k+1])^2 - theta(nodes[i], nodes[j], nodes[k])^2 ) 
+                                        - (theta_int3(nodes[i], nodes[j], nodes[k+1]) - theta_int3(nodes[i], nodes[j], nodes[k])))
+                Gbar[2, 3, i, j, k] = ( nodes[i] * (nodes[k+1] - nodes[k])
+                                        + nodes[i] * ( theta(nodes[i], nodes[j], nodes[k+1]) - theta(nodes[i], nodes[j], nodes[k]) )
+                                        + 0.5 * (theta(nodes[i], nodes[j], nodes[k+1])^2 - theta(nodes[i], nodes[j], nodes[k])^2 ) 
+                                        + (theta_int3(nodes[i], nodes[j], nodes[k+1]) - theta_int3(nodes[i], nodes[j], nodes[k])))
+                Gbar[3, 3, i, j, k] = (nodes[j] * (theta(nodes[i], nodes[j], nodes[k+1]) - theta(nodes[i], nodes[j], nodes[k]) )
+                                       + 0.5 * (theta(nodes[i], nodes[j], nodes[k+1])^2 - theta(nodes[i], nodes[j], nodes[k])^2 ) )
             end
         end
     end
