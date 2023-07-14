@@ -12,6 +12,8 @@ function init_elements!(elements, mesh::StructuredMesh{3}, basis::LobattoLegendr
 
     linear_indices = LinearIndices(size(mesh))
 
+    node_coordinates_comp = zeros(3, nnodes(basis))
+
     # Calculate node coordinates, Jacobian matrix, and inverse Jacobian determinant
     for cell_z in 1:size(mesh, 3), cell_y in 1:size(mesh, 2), cell_x in 1:size(mesh, 1)
         element = linear_indices[cell_x, cell_y, cell_z]
@@ -19,15 +21,17 @@ function init_elements!(elements, mesh::StructuredMesh{3}, basis::LobattoLegendr
         calc_node_coordinates!(node_coordinates, element, cell_x, cell_y, cell_z,
                                mesh.mapping, mesh, basis)
 
+        calc_node_coordinates_computational!(node_coordinates_comp, cell_x, cell_y, cell_z, mesh, basis)
+
         if mesh.exact_jacobian
-            calc_jacobian_matrix_exact!(jacobian_matrix, element, node_coordinates, basis)
+            calc_jacobian_matrix_exact!(jacobian_matrix, element, node_coordinates, basis, node_coordinates_comp)
         else
             calc_jacobian_matrix_standard!(jacobian_matrix, element, node_coordinates, basis)
         end
 
         if mesh.mimetic
             calc_contravariant_vectors_mimetic!(contravariant_vectors, element, jacobian_matrix,
-                                                 node_coordinates, basis)
+                                                 node_coordinates, basis, node_coordinates_comp)
         else
             calc_contravariant_vectors_standard!(contravariant_vectors, element, jacobian_matrix,
                                                  node_coordinates, basis)
@@ -70,13 +74,34 @@ function calc_node_coordinates!(node_coordinates, element,
     end
 end
 
+function calc_node_coordinates_computational!(node_coordinates_comp, cell_x, cell_y, cell_z, mesh, basis)
+    @unpack nodes = basis
+
+    # Get cell length in reference mesh
+    dx = 2 / size(mesh, 1)
+    dy = 2 / size(mesh, 2)
+    dz = 2 / size(mesh, 3)
+
+    # Calculate node coordinates of reference mesh
+    cell_x_offset = -1 + (cell_x - 1) * dx + dx / 2
+    cell_y_offset = -1 + (cell_y - 1) * dy + dy / 2
+    cell_z_offset = -1 + (cell_z - 1) * dz + dz / 2
+
+    for i in eachnode(basis)
+        # node_coordinates are the mapped reference node_coordinates
+        node_coordinates_comp[1, i] = cell_x_offset + dx / 2 * nodes[i]
+        node_coordinates_comp[2, i] = cell_y_offset + dy / 2 * nodes[i]
+        node_coordinates_comp[3, i] = cell_z_offset + dz / 2 * nodes[i]
+    end
+end
+
 theta_der1(xi, eta, zeta) = -(0.1 * pi) * sin(pi * xi) * cos(pi * eta) * cos(pi * zeta) 
 theta_der2(xi, eta, zeta) = -(0.1 * pi) * cos(pi * xi) * sin(pi * eta) * cos(pi * zeta) 
 theta_der3(xi, eta, zeta) = -(0.1 * pi) * cos(pi * xi) * cos(pi * eta) * sin(pi * zeta) 
 
 # Calculate Jacobian matrix of the mapping from the reference element to the element in the physical domain
 function calc_jacobian_matrix_exact!(jacobian_matrix::AbstractArray{<:Any, 6}, element,
-    node_coordinates, basis)
+    node_coordinates, basis, nodes)
     # for dim in 1:3, j in eachnode(basis), i in eachnode(basis)
     #   # ∂/∂ξ
     #   jacobian_matrix[dim, 1, :, i, j, element] = basis.derivative_matrix * node_coordinates[dim, :, i, j, element]
@@ -85,35 +110,34 @@ function calc_jacobian_matrix_exact!(jacobian_matrix::AbstractArray{<:Any, 6}, e
     #   # ∂/∂ζ
     #   jacobian_matrix[dim, 3, i, j, :, element] = basis.derivative_matrix * node_coordinates[dim, i, j, :, element]
     # end
-    @unpack nodes = basis
     @turbo for k in eachnode(basis), j in eachnode(basis), i in eachnode(basis)
+        jacobian_matrix[1, 1, i, j, k, element] = 1 + theta_der1(nodes[1,i], nodes[2,j], nodes[3,k])
+        jacobian_matrix[2, 1, i, j, k, element] = theta_der1(nodes[1,i], nodes[2,j], nodes[3,k])
+        jacobian_matrix[3, 1, i, j, k, element] = theta_der1(nodes[1,i], nodes[2,j], nodes[3,k])
 
-        jacobian_matrix[1, 1, i, j, k, element] = 1 + theta_der1(nodes[i], nodes[j], nodes[k])
-        jacobian_matrix[2, 1, i, j, k, element] = theta_der1(nodes[i], nodes[j], nodes[k])
-        jacobian_matrix[3, 1, i, j, k, element] = theta_der1(nodes[i], nodes[j], nodes[k])
+        jacobian_matrix[1, 2, i, j, k, element] = theta_der2(nodes[1,i], nodes[2,j], nodes[3,k])
+        jacobian_matrix[2, 2, i, j, k, element] = 1 + theta_der2(nodes[1,i], nodes[2,j], nodes[3,k])
+        jacobian_matrix[3, 2, i, j, k, element] = theta_der2(nodes[1,i], nodes[2,j], nodes[3,k])
 
-        jacobian_matrix[1, 2, i, j, k, element] = theta_der2(nodes[i], nodes[j], nodes[k])
-        jacobian_matrix[2, 2, i, j, k, element] = 1 + theta_der2(nodes[i], nodes[j], nodes[k])
-        jacobian_matrix[3, 2, i, j, k, element] = theta_der2(nodes[i], nodes[j], nodes[k])
+        jacobian_matrix[1, 3, i, j, k, element] = theta_der3(nodes[1,i], nodes[2,j], nodes[3,k])
+        jacobian_matrix[2, 3, i, j, k, element] = theta_der3(nodes[1,i], nodes[2,j], nodes[3,k])
+        jacobian_matrix[3, 3, i, j, k, element] = 1 + theta_der3(nodes[1,i], nodes[2,j], nodes[3,k])
 
-        jacobian_matrix[1, 3, i, j, k, element] = theta_der3(nodes[i], nodes[j], nodes[k])
-        jacobian_matrix[2, 3, i, j, k, element] = theta_der3(nodes[i], nodes[j], nodes[k])
-        jacobian_matrix[3, 3, i, j, k, element] = 1 + theta_der3(nodes[i], nodes[j], nodes[k])
+        #= jacobian_matrix[1, 1, i, j, k, element] = 1 + theta_der1(nodes[1,i], nodes[2,j], nodes[3,k])
+        jacobian_matrix[1, 2, i, j, k, element] = theta_der1(nodes[1,i], nodes[2,j], nodes[3,k])
+        jacobian_matrix[1, 3, i, j, k, element] = theta_der1(nodes[1,i], nodes[2,j], nodes[3,k])
 
-        #= jacobian_matrix[1, 1, i, j, k, element] = 1 + theta_der1(nodes[i], nodes[j], nodes[k])
-        jacobian_matrix[1, 2, i, j, k, element] = theta_der1(nodes[i], nodes[j], nodes[k])
-        jacobian_matrix[1, 3, i, j, k, element] = theta_der1(nodes[i], nodes[j], nodes[k])
+        jacobian_matrix[2, 1, i, j, k, element] = theta_der2(nodes[1,i], nodes[2,j], nodes[3,k])
+        jacobian_matrix[2, 2, i, j, k, element] = 1 + theta_der2(nodes[1,i], nodes[2,j], nodes[3,k])
+        jacobian_matrix[2, 3, i, j, k, element] = theta_der2(nodes[1,i], nodes[2,j], nodes[3,k])
 
-        jacobian_matrix[2, 1, i, j, k, element] = theta_der2(nodes[i], nodes[j], nodes[k])
-        jacobian_matrix[2, 2, i, j, k, element] = 1 + theta_der2(nodes[i], nodes[j], nodes[k])
-        jacobian_matrix[2, 3, i, j, k, element] = theta_der2(nodes[i], nodes[j], nodes[k])
-
-        jacobian_matrix[3, 1, i, j, k, element] = theta_der3(nodes[i], nodes[j], nodes[k])
-        jacobian_matrix[3, 2, i, j, k, element] = theta_der3(nodes[i], nodes[j], nodes[k])
-        jacobian_matrix[3, 3, i, j, k, element] = 1 + theta_der3(nodes[i], nodes[j], nodes[k]) =#
+        jacobian_matrix[3, 1, i, j, k, element] = theta_der3(nodes[1,i], nodes[2,j], nodes[3,k])
+        jacobian_matrix[3, 2, i, j, k, element] = theta_der3(nodes[1,i], nodes[2,j], nodes[3,k])
+        jacobian_matrix[3, 3, i, j, k, element] = 1 + theta_der3(nodes[1,i], nodes[2,j], nodes[3,k]) =#
 
         #jacobian_matrix[:, :, i, j, k, element] = transpose(jacobian_matrix[:, :, i, j, k, element])
     end
+    
 
 end
 
@@ -304,8 +328,9 @@ New function to compute contravariant vectors
 function calc_contravariant_vectors_mimetic!(contravariant_vectors::AbstractArray{<:Any, 6},
     element,
     jacobian_matrix, node_coordinates,
-    basis::LobattoLegendreBasis)
-    @unpack derivative_matrix, nodes = basis
+    basis::LobattoLegendreBasis,
+    nodes)
+    @unpack derivative_matrix = basis
 
     # Define histopolation (edge) basis functions: V[i,j] = hⱼ(ξᵢ) ... TODO: initialize beforehand...
     V = zero(MMatrix{polydeg(basis) + 1, polydeg(basis), eltype(derivative_matrix)})
@@ -322,45 +347,45 @@ function calc_contravariant_vectors_mimetic!(contravariant_vectors::AbstractArra
     for k in eachnode(basis)
         for j in eachnode(basis)
             for i in 1:polydeg(basis)
-                Gbar[1, 1, i, j, k] = (nodes[k] * (theta(nodes[i+1], nodes[j], nodes[k]) - theta(nodes[i], nodes[j], nodes[k]) )
-                                       + 0.5 * (theta(nodes[i+1], nodes[j], nodes[k])^2 - theta(nodes[i], nodes[j], nodes[k])^2 ) )
-                Gbar[2, 1, i, j, k] = (nodes[i+1] * theta(nodes[i+1], nodes[j], nodes[k]) - nodes[i] * theta(nodes[i], nodes[j], nodes[k]) 
-                                       + 0.5 * (theta(nodes[i+1], nodes[j], nodes[k])^2 - theta(nodes[i], nodes[j], nodes[k])^2 ) 
-                                       - (theta_int1(nodes[i+1], nodes[j], nodes[k]) - theta_int1(nodes[i], nodes[j], nodes[k])))
-                Gbar[3, 1, i, j, k] = ( nodes[j] * (nodes[i+1] - nodes[i])
-                                       + nodes[j] * ( theta(nodes[i+1], nodes[j], nodes[k]) - theta(nodes[i], nodes[j], nodes[k]) )
-                                       + 0.5 * (theta(nodes[i+1], nodes[j], nodes[k])^2 - theta(nodes[i], nodes[j], nodes[k])^2 ) 
-                                       + (theta_int1(nodes[i+1], nodes[j], nodes[k]) - theta_int1(nodes[i], nodes[j], nodes[k])))
+                Gbar[1, 1, i, j, k] = (nodes[3, k] * (theta(nodes[1,i+1], nodes[2,j], nodes[3,k]) - theta(nodes[1,i], nodes[2,j], nodes[3,k]) )
+                                       + 0.5 * (theta(nodes[1,i+1], nodes[2,j], nodes[3,k])^2 - theta(nodes[1,i], nodes[2,j], nodes[3,k])^2 ) )
+                Gbar[2, 1, i, j, k] = (nodes[1, i+1] * theta(nodes[1,i+1], nodes[2,j], nodes[3,k]) - nodes[1, i] * theta(nodes[1,i], nodes[2,j], nodes[3,k]) 
+                                       + 0.5 * (theta(nodes[1,i+1], nodes[2,j], nodes[3,k])^2 - theta(nodes[1,i], nodes[2,j], nodes[3,k])^2 ) 
+                                       - (theta_int1(nodes[1,i+1], nodes[2,j], nodes[3,k]) - theta_int1(nodes[1,i], nodes[2,j], nodes[3,k])))
+                Gbar[3, 1, i, j, k] = ( nodes[2, j] * (nodes[1, i+1] - nodes[1, i])
+                                       + nodes[2, j] * ( theta(nodes[1,i+1], nodes[2,j], nodes[3,k]) - theta(nodes[1,i], nodes[2,j], nodes[3,k]) )
+                                       + 0.5 * (theta(nodes[1,i+1], nodes[2,j], nodes[3,k])^2 - theta(nodes[1,i], nodes[2,j], nodes[3,k])^2 ) 
+                                       + (theta_int1(nodes[1,i+1], nodes[2,j], nodes[3,k]) - theta_int1(nodes[1,i], nodes[2,j], nodes[3,k])))
             end
         end
     end
     for k in eachnode(basis)
         for j in 1:polydeg(basis)
             for i in eachnode(basis)
-                Gbar[1, 2, i, j, k] = ( nodes[k] * (nodes[j+1] - nodes[j])
-                                        + nodes[k] * ( theta(nodes[i], nodes[j+1], nodes[k]) - theta(nodes[i], nodes[j], nodes[k]) )
-                                        + 0.5 * (theta(nodes[i], nodes[j+1], nodes[k])^2 - theta(nodes[i], nodes[j], nodes[k])^2 ) 
-                                        + (theta_int2(nodes[i], nodes[j+1], nodes[k]) - theta_int2(nodes[i], nodes[j], nodes[k])))
-                Gbar[2, 2, i, j, k] = (nodes[i] * (theta(nodes[i], nodes[j+1], nodes[k]) - theta(nodes[i], nodes[j], nodes[k]) )
-                                       + 0.5 * (theta(nodes[i], nodes[j+1], nodes[k])^2 - theta(nodes[i], nodes[j], nodes[k])^2 ) )
-                Gbar[3, 2, i, j, k] = (nodes[j+1] * theta(nodes[i], nodes[j+1], nodes[k]) - nodes[j] * theta(nodes[i], nodes[j], nodes[k]) 
-                                        + 0.5 * (theta(nodes[i], nodes[j+1], nodes[k])^2 - theta(nodes[i], nodes[j], nodes[k])^2 ) 
-                                        - (theta_int2(nodes[i], nodes[j+1], nodes[k]) - theta_int2(nodes[i], nodes[j], nodes[k])))
+                Gbar[1, 2, i, j, k] = ( nodes[3, k] * (nodes[2, j+1] - nodes[2, j])
+                                        + nodes[3, k] * ( theta(nodes[1,i], nodes[2,j+1], nodes[3,k]) - theta(nodes[1,i], nodes[2,j], nodes[3,k]) )
+                                        + 0.5 * (theta(nodes[1,i], nodes[2,j+1], nodes[3,k])^2 - theta(nodes[1,i], nodes[2,j], nodes[3,k])^2 ) 
+                                        + (theta_int2(nodes[1,i], nodes[2,j+1], nodes[3,k]) - theta_int2(nodes[1,i], nodes[2,j], nodes[3,k])))
+                Gbar[2, 2, i, j, k] = (nodes[1, i] * (theta(nodes[1,i], nodes[2,j+1], nodes[3,k]) - theta(nodes[1,i], nodes[2,j], nodes[3,k]) )
+                                       + 0.5 * (theta(nodes[1,i], nodes[2,j+1], nodes[3,k])^2 - theta(nodes[1,i], nodes[2,j], nodes[3,k])^2 ) )
+                Gbar[3, 2, i, j, k] = (nodes[2, j+1] * theta(nodes[1,i], nodes[2,j+1], nodes[3,k]) - nodes[2, j] * theta(nodes[1,i], nodes[2,j], nodes[3,k]) 
+                                        + 0.5 * (theta(nodes[1,i], nodes[2,j+1], nodes[3,k])^2 - theta(nodes[1,i], nodes[2,j], nodes[3,k])^2 ) 
+                                        - (theta_int2(nodes[1,i], nodes[2,j+1], nodes[3,k]) - theta_int2(nodes[1,i], nodes[2,j], nodes[3,k])))
             end
         end
     end
     for k in 1:polydeg(basis)
         for j in eachnode(basis)
             for i in eachnode(basis)
-                Gbar[1, 3, i, j, k] = (nodes[k+1] * theta(nodes[i], nodes[j], nodes[k+1]) - nodes[k] * theta(nodes[i], nodes[j], nodes[k]) 
-                                        + 0.5 * (theta(nodes[i], nodes[j], nodes[k+1])^2 - theta(nodes[i], nodes[j], nodes[k])^2 ) 
-                                        - (theta_int3(nodes[i], nodes[j], nodes[k+1]) - theta_int3(nodes[i], nodes[j], nodes[k])))
-                Gbar[2, 3, i, j, k] = ( nodes[i] * (nodes[k+1] - nodes[k])
-                                        + nodes[i] * ( theta(nodes[i], nodes[j], nodes[k+1]) - theta(nodes[i], nodes[j], nodes[k]) )
-                                        + 0.5 * (theta(nodes[i], nodes[j], nodes[k+1])^2 - theta(nodes[i], nodes[j], nodes[k])^2 ) 
-                                        + (theta_int3(nodes[i], nodes[j], nodes[k+1]) - theta_int3(nodes[i], nodes[j], nodes[k])))
-                Gbar[3, 3, i, j, k] = (nodes[j] * (theta(nodes[i], nodes[j], nodes[k+1]) - theta(nodes[i], nodes[j], nodes[k]) )
-                                       + 0.5 * (theta(nodes[i], nodes[j], nodes[k+1])^2 - theta(nodes[i], nodes[j], nodes[k])^2 ) )
+                Gbar[1, 3, i, j, k] = (nodes[3, k+1] * theta(nodes[1,i], nodes[2,j], nodes[3,k+1]) - nodes[3, k] * theta(nodes[1,i], nodes[2,j], nodes[3,k]) 
+                                        + 0.5 * (theta(nodes[1,i], nodes[2,j], nodes[3,k+1])^2 - theta(nodes[1,i], nodes[2,j], nodes[3,k])^2 ) 
+                                        - (theta_int3(nodes[1,i], nodes[2,j], nodes[3,k+1]) - theta_int3(nodes[1,i], nodes[2,j], nodes[3,k])))
+                Gbar[2, 3, i, j, k] = ( nodes[1, i] * (nodes[3, k+1] - nodes[3, k])
+                                        + nodes[1, i] * ( theta(nodes[1,i], nodes[2,j], nodes[3,k+1]) - theta(nodes[1,i], nodes[2,j], nodes[3,k]) )
+                                        + 0.5 * (theta(nodes[1,i], nodes[2,j], nodes[3,k+1])^2 - theta(nodes[1,i], nodes[2,j], nodes[3,k])^2 ) 
+                                        + (theta_int3(nodes[1,i], nodes[2,j], nodes[3,k+1]) - theta_int3(nodes[1,i], nodes[2,j], nodes[3,k])))
+                Gbar[3, 3, i, j, k] = (nodes[2, j] * (theta(nodes[1,i], nodes[2,j], nodes[3,k+1]) - theta(nodes[1,i], nodes[2,j], nodes[3,k]) )
+                                       + 0.5 * (theta(nodes[1,i], nodes[2,j], nodes[3,k+1])^2 - theta(nodes[1,i], nodes[2,j], nodes[3,k])^2 ) )
             end
         end
     end
