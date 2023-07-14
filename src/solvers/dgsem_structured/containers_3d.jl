@@ -322,6 +322,119 @@ function calc_contravariant_vectors_standard!(contravariant_vectors::AbstractArr
     return contravariant_vectors
 end
 
+# Calculate contravariant vectors, multiplied by the Jacobian determinant J of the transformation mapping,
+# using the invariant curl form.
+# These are called Ja^i in Kopriva's blue book.
+function calc_contravariant_vectors_standard_curl!(contravariant_vectors::AbstractArray{<:Any, 6},
+                                     element,
+                                     jacobian_matrix, node_coordinates,
+                                     basis::LobattoLegendreBasis)
+    @unpack derivative_matrix = basis
+
+    # The general form is
+    # Jaⁱₙ = 0.5 * ( ∇ × (Xₘ ∇ Xₗ - Xₗ ∇ Xₘ) )ᵢ  where (n, m, l) cyclic and ∇ = (∂/∂ξ, ∂/∂η, ∂/∂ζ)ᵀ
+
+    for n in 1:3
+        # (n, m, l) cyclic
+        m = (n % 3) + 1
+        l = ((n + 1) % 3) + 1
+
+        # Calculate Ja¹ₙ = 0.5 * [ (Xₘ Xₗ_ζ - Xₗ Xₘ_ζ)_η - (Xₘ Xₗ_η - Xₗ Xₘ_η)_ζ ]
+        # For each of these, the first and second summand are computed in separate loops
+        # for performance reasons.
+
+        # First summand 0.5 * (Xₘ Xₗ_ζ - Xₗ Xₘ_ζ)_η
+        @turbo for k in eachnode(basis), j in eachnode(basis), i in eachnode(basis)
+            result = zero(eltype(contravariant_vectors))
+
+            for ii in eachnode(basis)
+                # Multiply derivative_matrix to j-dimension to differentiate wrt η
+                result += derivative_matrix[j, ii] *
+                          ( - node_coordinates[l, i, ii, k, element] *
+                           jacobian_matrix[m, 3, i, ii, k, element])
+            end
+
+            contravariant_vectors[n, 1, i, j, k, element] = result
+        end
+
+        # Second summand -0.5 * (Xₘ Xₗ_η - Xₗ Xₘ_η)_ζ
+        @turbo for k in eachnode(basis), j in eachnode(basis), i in eachnode(basis)
+            result = zero(eltype(contravariant_vectors))
+
+            for ii in eachnode(basis)
+                # Multiply derivative_matrix to k-dimension to differentiate wrt ζ
+                result += derivative_matrix[k, ii] *
+                          ( -node_coordinates[l, i, j, ii, element] *
+                           jacobian_matrix[m, 2, i, j, ii, element])
+            end
+
+            contravariant_vectors[n, 1, i, j, k, element] -= result
+        end
+
+        # Calculate Ja²ₙ = 0.5 * [ (Xₘ Xₗ_ξ - Xₗ Xₘ_ξ)_ζ - (Xₘ Xₗ_ζ - Xₗ Xₘ_ζ)_ξ ]
+
+        # First summand 0.5 * (Xₘ Xₗ_ξ - Xₗ Xₘ_ξ)_ζ
+        @turbo for k in eachnode(basis), j in eachnode(basis), i in eachnode(basis)
+            result = zero(eltype(contravariant_vectors))
+
+            for ii in eachnode(basis)
+                # Multiply derivative_matrix to k-dimension to differentiate wrt ζ
+                result += derivative_matrix[k, ii] *
+                          (-node_coordinates[l, i, j, ii, element] *
+                           jacobian_matrix[m, 1, i, j, ii, element])
+            end
+
+            contravariant_vectors[n, 2, i, j, k, element] = result
+        end
+
+        # Second summand -0.5 * (Xₘ Xₗ_ζ - Xₗ Xₘ_ζ)_ξ
+        @turbo for k in eachnode(basis), j in eachnode(basis), i in eachnode(basis)
+            result = zero(eltype(contravariant_vectors))
+
+            for ii in eachnode(basis)
+                # Multiply derivative_matrix to i-dimension to differentiate wrt ξ
+                result += derivative_matrix[i, ii] *
+                          (-node_coordinates[l, ii, j, k, element] *
+                           jacobian_matrix[m, 3, ii, j, k, element])
+            end
+
+            contravariant_vectors[n, 2, i, j, k, element] -= result
+        end
+
+        # Calculate Ja³ₙ = 0.5 * [ (Xₘ Xₗ_η - Xₗ Xₘ_η)_ξ - (Xₘ Xₗ_ξ - Xₗ Xₘ_ξ)_η ]
+
+        # First summand 0.5 * (Xₘ Xₗ_η - Xₗ Xₘ_η)_ξ
+        @turbo for k in eachnode(basis), j in eachnode(basis), i in eachnode(basis)
+            result = zero(eltype(contravariant_vectors))
+
+            for ii in eachnode(basis)
+                # Multiply derivative_matrix to i-dimension to differentiate wrt ξ
+                result += derivative_matrix[i, ii] *
+                          (-node_coordinates[l, ii, j, k, element] *
+                           jacobian_matrix[m, 2, ii, j, k, element])
+            end
+
+            contravariant_vectors[n, 3, i, j, k, element] = result
+        end
+
+        # Second summand -0.5 * (Xₘ Xₗ_ξ - Xₗ Xₘ_ξ)_η
+        @turbo for k in eachnode(basis), j in eachnode(basis), i in eachnode(basis)
+            result = zero(eltype(contravariant_vectors))
+
+            for ii in eachnode(basis)
+                # Multiply derivative_matrix to j-dimension to differentiate wrt η
+                result += derivative_matrix[j, ii] *
+                          (-node_coordinates[l, i, ii, k, element] *
+                           jacobian_matrix[m, 1, i, ii, k, element])
+            end
+
+            contravariant_vectors[n, 3, i, j, k, element] -= result
+        end
+    end
+
+    return contravariant_vectors
+end
+
 """
 New function to compute contravariant vectors
 """
