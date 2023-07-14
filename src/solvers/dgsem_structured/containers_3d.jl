@@ -19,7 +19,11 @@ function init_elements!(elements, mesh::StructuredMesh{3}, basis::LobattoLegendr
         calc_node_coordinates!(node_coordinates, element, cell_x, cell_y, cell_z,
                                mesh.mapping, mesh, basis)
 
-        calc_jacobian_matrix!(jacobian_matrix, element, node_coordinates, basis)
+        if mesh.exact_jacobian
+            calc_jacobian_matrix_exact!(jacobian_matrix, element, node_coordinates, basis)
+        else
+            calc_jacobian_matrix_standard!(jacobian_matrix, element, node_coordinates, basis)
+        end
 
         if mesh.mimetic
             calc_contravariant_vectors_mimetic!(contravariant_vectors, element, jacobian_matrix,
@@ -66,8 +70,55 @@ function calc_node_coordinates!(node_coordinates, element,
     end
 end
 
+theta_der1(xi, eta, zeta) = -(0.1 * pi) * sin(pi * xi) * cos(pi * eta) * cos(pi * zeta) 
+theta_der2(xi, eta, zeta) = -(0.1 * pi) * cos(pi * xi) * sin(pi * eta) * cos(pi * zeta) 
+theta_der3(xi, eta, zeta) = -(0.1 * pi) * cos(pi * xi) * cos(pi * eta) * sin(pi * zeta) 
+
 # Calculate Jacobian matrix of the mapping from the reference element to the element in the physical domain
-function calc_jacobian_matrix!(jacobian_matrix::AbstractArray{<:Any, 6}, element,
+function calc_jacobian_matrix_exact!(jacobian_matrix::AbstractArray{<:Any, 6}, element,
+    node_coordinates, basis)
+    # for dim in 1:3, j in eachnode(basis), i in eachnode(basis)
+    #   # ∂/∂ξ
+    #   jacobian_matrix[dim, 1, :, i, j, element] = basis.derivative_matrix * node_coordinates[dim, :, i, j, element]
+    #   # ∂/∂η
+    #   jacobian_matrix[dim, 2, i, :, j, element] = basis.derivative_matrix * node_coordinates[dim, i, :, j, element]
+    #   # ∂/∂ζ
+    #   jacobian_matrix[dim, 3, i, j, :, element] = basis.derivative_matrix * node_coordinates[dim, i, j, :, element]
+    # end
+    @unpack nodes = basis
+    @turbo for k in eachnode(basis), j in eachnode(basis), i in eachnode(basis)
+
+        jacobian_matrix[1, 1, i, j, k, element] = 1 + theta_der1(nodes[i], nodes[j], nodes[k])
+        jacobian_matrix[2, 1, i, j, k, element] = theta_der1(nodes[i], nodes[j], nodes[k])
+        jacobian_matrix[3, 1, i, j, k, element] = theta_der1(nodes[i], nodes[j], nodes[k])
+
+        jacobian_matrix[1, 2, i, j, k, element] = theta_der2(nodes[i], nodes[j], nodes[k])
+        jacobian_matrix[2, 2, i, j, k, element] = 1 + theta_der2(nodes[i], nodes[j], nodes[k])
+        jacobian_matrix[3, 2, i, j, k, element] = theta_der2(nodes[i], nodes[j], nodes[k])
+
+        jacobian_matrix[1, 3, i, j, k, element] = theta_der3(nodes[i], nodes[j], nodes[k])
+        jacobian_matrix[2, 3, i, j, k, element] = theta_der3(nodes[i], nodes[j], nodes[k])
+        jacobian_matrix[3, 3, i, j, k, element] = 1 + theta_der3(nodes[i], nodes[j], nodes[k])
+
+        #= jacobian_matrix[1, 1, i, j, k, element] = 1 + theta_der1(nodes[i], nodes[j], nodes[k])
+        jacobian_matrix[1, 2, i, j, k, element] = theta_der1(nodes[i], nodes[j], nodes[k])
+        jacobian_matrix[1, 3, i, j, k, element] = theta_der1(nodes[i], nodes[j], nodes[k])
+
+        jacobian_matrix[2, 1, i, j, k, element] = theta_der2(nodes[i], nodes[j], nodes[k])
+        jacobian_matrix[2, 2, i, j, k, element] = 1 + theta_der2(nodes[i], nodes[j], nodes[k])
+        jacobian_matrix[2, 3, i, j, k, element] = theta_der2(nodes[i], nodes[j], nodes[k])
+
+        jacobian_matrix[3, 1, i, j, k, element] = theta_der3(nodes[i], nodes[j], nodes[k])
+        jacobian_matrix[3, 2, i, j, k, element] = theta_der3(nodes[i], nodes[j], nodes[k])
+        jacobian_matrix[3, 3, i, j, k, element] = 1 + theta_der3(nodes[i], nodes[j], nodes[k]) =#
+
+        #jacobian_matrix[:, :, i, j, k, element] = transpose(jacobian_matrix[:, :, i, j, k, element])
+    end
+
+end
+
+# Calculate Jacobian matrix of the mapping from the reference element to the element in the physical domain
+function calc_jacobian_matrix_standard!(jacobian_matrix::AbstractArray{<:Any, 6}, element,
                                node_coordinates, basis)
     # The code below is equivalent to the following matrix multiplications but much faster.
     #

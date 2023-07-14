@@ -220,6 +220,8 @@ export DG,
        SurfaceIntegralUpwind,
        MortarL2
 
+export theta_der1, theta_der2, theta_der3
+
 export nelements, nnodes, nvariables,
        eachelement, eachnode, eachvariable
 

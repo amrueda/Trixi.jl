@@ -84,7 +84,7 @@ for polydeg in 1:max_polydeg
   mesh = StructuredMesh(cells_per_dimension, mapping; mimetic = false, exact_jacobian = exact_jacobian)
 
   # A semidiscre  tization collects data structures and functions for the spatial discretization
-  semi = SemidiscretizationHyperbolic(mesh, equations, initial_condition, solver)
+  semi = SemidiscretizationHyperbolic(mesh, equations, initial_condition, solver, boundary_conditions = BoundaryConditionDirichlet(initial_condition))
 
   error_inf, error_L2 = compute_error(solver, semi)
   errors_normals_inf[polydeg,1] = error_inf
@@ -120,7 +120,7 @@ for polydeg in 1:max_polydeg
   mesh = StructuredMesh(cells_per_dimension, mapping; mimetic = true, exact_jacobian = exact_jacobian)
 
   # A semidiscretization collects data structures and functions for the spatial discretization
-  semi = SemidiscretizationHyperbolic(mesh, equations, initial_condition, solver)
+  semi = SemidiscretizationHyperbolic(mesh, equations, initial_condition, solver, boundary_conditions = BoundaryConditionDirichlet(initial_condition))
 
   error_inf, error_L2 = compute_error(solver, semi)
   errors_normals_inf[polydeg,2] = error_inf

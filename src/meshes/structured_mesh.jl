@@ -21,6 +21,7 @@ mutable struct StructuredMesh{NDIMS, RealT <: Real} <: AbstractMesh{NDIMS}
     current_filename::String
     unsaved_changes::Bool
     mimetic::Bool
+    exact_jacobian::Bool
 end
 
 """
@@ -46,6 +47,7 @@ Create a StructuredMesh of the given size and shape that uses `RealT` as coordin
 """
 function StructuredMesh(cells_per_dimension, mapping; RealT = Float64,
                         mimetic = false,
+                        exact_jacobian = false,
                         periodicity = true, unsaved_changes = true,
                         mapping_as_string = mapping2string(mapping,
                                                            length(cells_per_dimension)))
@@ -65,7 +67,7 @@ function StructuredMesh(cells_per_dimension, mapping; RealT = Float64,
 
     return StructuredMesh{NDIMS, RealT}(Tuple(cells_per_dimension), mapping,
                                         mapping_as_string, periodicity, "",
-                                        unsaved_changes, mimetic)
+                                        unsaved_changes, mimetic, exact_jacobian)
 end
 
 """
