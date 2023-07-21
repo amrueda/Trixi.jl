@@ -34,9 +34,9 @@ end
 
 cells_per_dimension = (1, 1, 1) # The p4est implementation works with one tree per direction only
 
-polydeg_geo = 10
+polydeg_geo = 5
 polydeg = 5
-exact_jacobian = true
+exact_jacobian = false
 final_time = 1.0
 
 initial_condition = initial_condition_constant
@@ -45,7 +45,24 @@ solver = DGSEM(polydeg, flux_lax_friedrichs)
 
 # Create curved mesh with 8 x 8 x 8 elements
 #mesh = StructuredMesh(cells_per_dimension, mapping; mimetic = false, exact_jacobian = exact_jacobian)
-mesh = P4estMesh(cells_per_dimension; polydeg = polydeg_geo, mapping = mapping, mimetic = true, exact_jacobian = exact_jacobian, initial_refinement_level = 3)
+mesh = P4estMesh(cells_per_dimension; polydeg = polydeg_geo, mapping = mapping, mimetic = false, exact_jacobian = exact_jacobian, initial_refinement_level = 0)
+
+# Refine bottom left quadrant of each tree to level 3
+function refine_fn(p8est, which_tree, quadrant)
+    quadrant_obj = unsafe_load(quadrant)
+    if quadrant_obj.x == 0 && quadrant_obj.y == 0 && quadrant_obj.z == 0 && quadrant_obj.level < 2
+      # return true (refine)
+      return Cint(1)
+    else
+      # return false (don't refine)
+      return Cint(0)
+    end
+  end
+  
+  # Refine recursively until each bottom left quadrant of a tree has level 3
+  # The mesh will be rebalanced before the simulation starts
+  refine_fn_c = @cfunction(refine_fn, Cint, (Ptr{Trixi.p8est_t}, Ptr{Trixi.p4est_topidx_t}, Ptr{Trixi.p8est_quadrant_t}))
+  Trixi.refine_p4est!(mesh.p4est, true, refine_fn_c, C_NULL)
 
 # A semidiscre  tization collects data structures and functions for the spatial discretization
 semi = SemidiscretizationHyperbolic(mesh, equations, initial_condition, solver)
@@ -60,6 +77,10 @@ analysis_callback = AnalysisCallback(semi, interval=100)
 
 # The StepsizeCallback handles the re-calculation of the maximum Δt after each time step
 stepsize_callback = StepsizeCallback(cfl=0.1)
+
+# The SaveSolutionCallback allows to save the solution to a file in regular intervals
+save_solution = SaveSolutionCallback(interval=100,
+                                     solution_variables=cons2prim)
 
 #= amr_indicator = IndicatorHennemannGassner(semi,
                                           alpha_max=1.0,
@@ -81,7 +102,7 @@ amr_callback = AMRCallback(semi, amr_controller,
                            adapt_initial_condition_only_refine=true) =#
 
 # Create a CallbackSet to collect all callbacks such that they can be passed to the ODE solver
-callbacks = CallbackSet(summary_callback, analysis_callback, stepsize_callback)
+callbacks = CallbackSet(summary_callback, analysis_callback, stepsize_callback, save_solution)
 
 
 ###############################################################################
