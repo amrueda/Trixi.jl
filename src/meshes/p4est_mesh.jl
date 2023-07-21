@@ -24,10 +24,12 @@ mutable struct P4estMesh{NDIMS, RealT <: Real, IsParallel, P, Ghost, NDIMSP2, NN
     current_filename::String
     unsaved_changes::Bool
     p4est_partition_allow_for_coarsening::Bool
+    mimetic::Bool
+    exact_jacobian::Bool
 
     function P4estMesh{NDIMS}(p4est, tree_node_coordinates, nodes, boundary_names,
                               current_filename, unsaved_changes,
-                              p4est_partition_allow_for_coarsening) where {NDIMS}
+                              p4est_partition_allow_for_coarsening, mimetic = false, exact_jacobian = false) where {NDIMS}
         if NDIMS == 2
             @assert p4est isa Ptr{p4est_t}
         elseif NDIMS == 3
@@ -57,7 +59,9 @@ mutable struct P4estMesh{NDIMS, RealT <: Real, IsParallel, P, Ghost, NDIMSP2, NN
                                                                                  boundary_names,
                                                                                  current_filename,
                                                                                  unsaved_changes,
-                                                                                 p4est_partition_allow_for_coarsening)
+                                                                                 p4est_partition_allow_for_coarsening,
+                                                                                 mimetic,
+                                                                                 exact_jacobian)
 
         # Destroy `p4est` structs when the mesh is garbage collected
         finalizer(destroy_mesh, mesh)
@@ -166,7 +170,9 @@ function P4estMesh(trees_per_dimension; polydeg,
                    coordinates_max = nothing,
                    RealT = Float64, initial_refinement_level = 0, periodicity = true,
                    unsaved_changes = true,
-                   p4est_partition_allow_for_coarsening = true)
+                   p4est_partition_allow_for_coarsening = true,
+                   mimetic = false,
+                   exact_jacobian = false)
     @assert ((coordinates_min === nothing)===(coordinates_max === nothing)) "Either both or none of coordinates_min and coordinates_max must be specified"
 
     @assert count(i -> i !== nothing,
@@ -215,7 +221,7 @@ function P4estMesh(trees_per_dimension; polydeg,
 
     return P4estMesh{NDIMS}(p4est, tree_node_coordinates, nodes,
                             boundary_names, "", unsaved_changes,
-                            p4est_partition_allow_for_coarsening)
+                            p4est_partition_allow_for_coarsening, mimetic, exact_jacobian)
 end
 
 # 2D version

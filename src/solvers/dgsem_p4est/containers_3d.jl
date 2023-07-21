@@ -12,13 +12,43 @@ function init_elements!(elements, mesh::P4estMesh{3}, basis::LobattoLegendreBasi
 
     calc_node_coordinates!(node_coordinates, mesh, basis)
 
-    for element in 1:ncells(mesh)
-        calc_jacobian_matrix!(jacobian_matrix, element, node_coordinates, basis)
+    # Macros from `p4est`
+    p4est_root_len = 1 << P4EST_MAXLEVEL
+    p4est_quadrant_len(l) = 1 << (P4EST_MAXLEVEL - l)
 
-        calc_contravariant_vectors!(contravariant_vectors, element, jacobian_matrix,
-                                    node_coordinates, basis)
+    trees = unsafe_wrap_sc(p8est_tree_t, mesh.p4est.trees)
 
-        calc_inverse_jacobian!(inverse_jacobian, element, jacobian_matrix, basis)
+    node_coordinates_comp = zeros(3, nnodes(basis))
+
+    for tree in eachindex(trees)
+        offset = trees[tree].quadrants_offset
+        quadrants = unsafe_wrap_sc(p8est_quadrant_t, trees[tree].quadrants)
+
+        for i in eachindex(quadrants)
+            element = offset + i
+            
+            if mesh.exact_jacobian || mesh.mimetic
+                quad = quadrants[i]
+                quad_length = p4est_quadrant_len(quad.level) / p4est_root_len
+                calc_node_coordinates_computational!(node_coordinates_comp, quad_length, p4est_root_len, quad, mesh, basis)
+            end
+            
+            if mesh.exact_jacobian
+                calc_jacobian_matrix_exact!(jacobian_matrix, element, node_coordinates, basis, node_coordinates_comp)
+            else
+                calc_jacobian_matrix!(jacobian_matrix, element, node_coordinates, basis)
+            end
+
+            if mesh.mimetic
+                calc_contravariant_vectors_mimetic!(contravariant_vectors, element, jacobian_matrix,
+                                                    node_coordinates, basis, node_coordinates_comp)
+            else
+                calc_contravariant_vectors!(contravariant_vectors, element, jacobian_matrix,
+                                                    node_coordinates, basis)
+            end
+
+            calc_inverse_jacobian!(inverse_jacobian, element, jacobian_matrix, basis)
+        end
     end
 
     return nothing
@@ -30,7 +60,7 @@ function calc_node_coordinates!(node_coordinates,
                                 basis::LobattoLegendreBasis)
     # Hanging nodes will cause holes in the mesh if its polydeg is higher
     # than the polydeg of the solver.
-    @assert length(basis.nodes)>=length(mesh.nodes) "The solver can't have a lower polydeg than the mesh"
+    #@assert length(basis.nodes)>=length(mesh.nodes) "The solver can't have a lower polydeg than the mesh"
 
     calc_node_coordinates!(node_coordinates, mesh, basis.nodes)
 end
@@ -73,6 +103,17 @@ function calc_node_coordinates!(node_coordinates,
     end
 
     return node_coordinates
+end
+
+function calc_node_coordinates_computational!(node_coordinates_comp, quad_length, p4est_root_len, quad, mesh, basis)
+    @unpack nodes = basis
+
+    node_coordinates_comp[1,:] = 2 * (quad_length * 1 / 2 * (nodes .+ 1) .+
+                                      quad.x / p4est_root_len) .- 1
+    node_coordinates_comp[2,:] = 2 * (quad_length * 1 / 2 * (nodes .+ 1) .+
+                                      quad.y / p4est_root_len) .- 1
+    node_coordinates_comp[3,:] = 2 * (quad_length * 1 / 2 * (nodes .+ 1) .+
+                                      quad.z / p4est_root_len) .- 1
 end
 
 # Initialize node_indices of interface container

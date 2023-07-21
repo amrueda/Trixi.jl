@@ -21,19 +21,21 @@ function init_elements!(elements, mesh::StructuredMesh{3}, basis::LobattoLegendr
         calc_node_coordinates!(node_coordinates, element, cell_x, cell_y, cell_z,
                                mesh.mapping, mesh, basis)
 
-        calc_node_coordinates_computational!(node_coordinates_comp, cell_x, cell_y, cell_z, mesh, basis)
-
+        if mesh.exact_jacobian || mesh.mimetic
+            calc_node_coordinates_computational!(node_coordinates_comp, cell_x, cell_y, cell_z, mesh, basis)
+        end
+        
         if mesh.exact_jacobian
             calc_jacobian_matrix_exact!(jacobian_matrix, element, node_coordinates, basis, node_coordinates_comp)
         else
-            calc_jacobian_matrix_standard!(jacobian_matrix, element, node_coordinates, basis)
+            calc_jacobian_matrix!(jacobian_matrix, element, node_coordinates, basis)
         end
 
         if mesh.mimetic
             calc_contravariant_vectors_mimetic!(contravariant_vectors, element, jacobian_matrix,
                                                  node_coordinates, basis, node_coordinates_comp)
         else
-            calc_contravariant_vectors_standard!(contravariant_vectors, element, jacobian_matrix,
+            calc_contravariant_vectors!(contravariant_vectors, element, jacobian_matrix,
                                                  node_coordinates, basis)
         end
 
@@ -122,27 +124,11 @@ function calc_jacobian_matrix_exact!(jacobian_matrix::AbstractArray{<:Any, 6}, e
         jacobian_matrix[1, 3, i, j, k, element] = theta_der3(nodes[1,i], nodes[2,j], nodes[3,k])
         jacobian_matrix[2, 3, i, j, k, element] = theta_der3(nodes[1,i], nodes[2,j], nodes[3,k])
         jacobian_matrix[3, 3, i, j, k, element] = 1 + theta_der3(nodes[1,i], nodes[2,j], nodes[3,k])
-
-        #= jacobian_matrix[1, 1, i, j, k, element] = 1 + theta_der1(nodes[1,i], nodes[2,j], nodes[3,k])
-        jacobian_matrix[1, 2, i, j, k, element] = theta_der1(nodes[1,i], nodes[2,j], nodes[3,k])
-        jacobian_matrix[1, 3, i, j, k, element] = theta_der1(nodes[1,i], nodes[2,j], nodes[3,k])
-
-        jacobian_matrix[2, 1, i, j, k, element] = theta_der2(nodes[1,i], nodes[2,j], nodes[3,k])
-        jacobian_matrix[2, 2, i, j, k, element] = 1 + theta_der2(nodes[1,i], nodes[2,j], nodes[3,k])
-        jacobian_matrix[2, 3, i, j, k, element] = theta_der2(nodes[1,i], nodes[2,j], nodes[3,k])
-
-        jacobian_matrix[3, 1, i, j, k, element] = theta_der3(nodes[1,i], nodes[2,j], nodes[3,k])
-        jacobian_matrix[3, 2, i, j, k, element] = theta_der3(nodes[1,i], nodes[2,j], nodes[3,k])
-        jacobian_matrix[3, 3, i, j, k, element] = 1 + theta_der3(nodes[1,i], nodes[2,j], nodes[3,k]) =#
-
-        #jacobian_matrix[:, :, i, j, k, element] = transpose(jacobian_matrix[:, :, i, j, k, element])
     end
-    
-
 end
 
 # Calculate Jacobian matrix of the mapping from the reference element to the element in the physical domain
-function calc_jacobian_matrix_standard!(jacobian_matrix::AbstractArray{<:Any, 6}, element,
+function calc_jacobian_matrix!(jacobian_matrix::AbstractArray{<:Any, 6}, element,
                                node_coordinates, basis)
     # The code below is equivalent to the following matrix multiplications but much faster.
     #
@@ -200,7 +186,7 @@ end
 # Calculate contravariant vectors, multiplied by the Jacobian determinant J of the transformation mapping,
 # using the invariant curl form.
 # These are called Ja^i in Kopriva's blue book.
-function calc_contravariant_vectors_standard!(contravariant_vectors::AbstractArray{<:Any, 6},
+function calc_contravariant_vectors!(contravariant_vectors::AbstractArray{<:Any, 6},
                                      element,
                                      jacobian_matrix, node_coordinates,
                                      basis::LobattoLegendreBasis)
