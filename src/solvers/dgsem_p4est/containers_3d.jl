@@ -105,7 +105,7 @@ function calc_node_coordinates!(node_coordinates,
     return node_coordinates
 end
 
-function calc_node_coordinates_computational!(node_coordinates_comp, quad_length, p4est_root_len, quad, mesh, basis)
+function calc_node_coordinates_computational!(node_coordinates_comp, quad_length, p4est_root_len, quad, mesh::P4estMesh{3}, basis)
     @unpack nodes = basis
 
     node_coordinates_comp[1,:] = 2 * (quad_length * 1 / 2 * (nodes .+ 1) .+
