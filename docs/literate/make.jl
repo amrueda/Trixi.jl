@@ -25,7 +25,7 @@ function create_files(title, file, repo_src, pages_dir, notebooks_dir; folder=""
     # Generate notebook file
     function preprocess_notebook(content)
         warning = "# **Note:** To improve responsiveness via caching, the notebooks are updated only once a week. They are only
-        # available for the latest stable release of Trixi at the time of caching.\n\n"
+        # available for the latest stable release of Trixi.jl at the time of caching.\n\n"
         return string("# # $title\n\n", warning, content)
     end
     Literate.notebook(joinpath(repo_src, folder, file), joinpath(notebooks_dir, folder); execute=false, preprocess=preprocess_notebook, credit=false)
@@ -51,12 +51,25 @@ function create_tutorials(files)
     # Run tests on all tutorial files
     @testset "TrixiTutorials" begin
         for (i, (title, filename)) in enumerate(files)
+            # Evaluate each tutorial in its own module to avoid leaking of
+            # function/variable names, polluting the namespace of later tutorials
+            # by stuff defined in earlier tutorials.
             if filename isa Vector # Several files of one topic
                 for j in eachindex(filename)
-                    @testset "$(filename[j][2][2])" begin include(joinpath(repo_src, filename[j][2][1], filename[j][2][2])) end
+                    mod = gensym(filename[j][2][2])
+                    @testset "$(filename[j][2][2])" begin
+                        @eval module $mod
+                            include(joinpath($repo_src, $(filename[j][2][1]), $(filename[j][2][2])))
+                        end
+                    end
                 end
             else # Single files
-                @testset "$title" begin include(joinpath(repo_src, filename)) end
+                mod = gensym(title)
+                @testset "$title" begin
+                    @eval module $mod
+                        include(joinpath($repo_src, $filename))
+                    end
+                end
             end
         end
     end
@@ -68,7 +81,7 @@ function create_tutorials(files)
 
     # Create markdown and notebook files for tutorials
     for (i, (title, filename)) in enumerate(files)
-        # Several files of one topic are created seperately and pushed to `pages` together.
+        # Several files of one topic are created separately and pushed to `pages` together.
         if filename isa Vector
             vector = []
             for j in eachindex(filename)

@@ -9,7 +9,9 @@ advection_velocity = 1.0
 """
     initial_condition_composite(x, t, equations::LinearScalarAdvectionEquation1D)
 
-Slight simplification of
+Wave form that is a combination of a Gaussian pulse, a square wave, a triangle wave,
+and half an ellipse with periodic boundary conditions.
+Slight simplification from
 - Jiang, Shu (1996)
   Efficient Implementation of Weighted ENO Schemes
   [DOI: 10.1006/jcph.1996.0130](https://doi.org/10.1006/jcph.1996.0130)
@@ -60,7 +62,7 @@ volume_integral = VolumeIntegralShockCapturingHG(indicator_sc;
 solver = DGSEM(basis, surface_flux, volume_integral)
 
 # Create curved mesh
-cells_per_dimension = (125,)
+cells_per_dimension = (120,)
 coordinates_min = (-1.0,) # minimum coordinate
 coordinates_max = (1.0,)  # maximum coordinate
 mesh = StructuredMesh(cells_per_dimension, coordinates_min, coordinates_max,
@@ -87,7 +89,7 @@ analysis_callback = AnalysisCallback(semi, interval=100)
 # The SaveSolutionCallback allows to save the solution to a file in regular intervals
 save_solution = SaveSolutionCallback(interval=100, solution_variables=cons2prim)
 
-# The StepsizeCallback handles the re-calculcation of the maximum Δt after each time step
+# The StepsizeCallback handles the re-calculation of the maximum Δt after each time step
 stepsize_callback = StepsizeCallback(cfl=0.5)
 
 # Create a CallbackSet to collect all callbacks such that they can be passed to the ODE solver

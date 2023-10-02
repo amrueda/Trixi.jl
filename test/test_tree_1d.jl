@@ -5,10 +5,9 @@ using Trixi
 
 include("test_trixi.jl")
 
-# pathof(Trixi) returns /path/to/Trixi/src/Trixi.jl, dirname gives the parent directory
-EXAMPLES_DIR = joinpath(pathof(Trixi) |> dirname |> dirname, "examples", "tree_1d_dgsem")
+EXAMPLES_DIR = pkgdir(Trixi, "examples", "tree_1d_dgsem")
 
-# Start with a clean environment: remove Trixi output directory if it exists
+# Start with a clean environment: remove Trixi.jl output directory if it exists
 outdir = "out"
 isdir(outdir) && rm(outdir, recursive=true)
 
@@ -37,11 +36,16 @@ isdir(outdir) && rm(outdir, recursive=true)
   # MHD Multicomponent
   include("test_tree_1d_mhdmulti.jl")
 
+  # MHD Multi-ion
+  include("test_tree_1d_mhdmultiion.jl")
+
   # Compressible Euler with self-gravity
   include("test_tree_1d_eulergravity.jl")
 
   # Shallow water
   include("test_tree_1d_shallowwater.jl")
+  # Two-layer Shallow Water
+  include("test_tree_1d_shallowwater_twolayer.jl")
 
   # FDSBP methods on the TreeMesh
   include("test_tree_1d_fdsbp.jl")
@@ -270,11 +274,11 @@ end
   sol = solve(ode, Tsit5(), abstol=1.0e-6, reltol=1.0e-6,
               save_everystep=false, callback=callbacks);
 
-  @test analysis_callback(sol).l2 ≈ [0.00029610274971929974, 5.573684084938363e-6]
+  @test analysis_callback(sol).l2 ≈ [0.00029609575838969394, 5.5681704039507985e-6]
 end
 
 
-# Clean up afterwards: delete Trixi output directory
+# Clean up afterwards: delete Trixi.jl output directory
 @test_nowarn rm(outdir, recursive=true)
 
 end # TreeMesh1D

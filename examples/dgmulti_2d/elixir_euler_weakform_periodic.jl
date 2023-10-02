@@ -2,14 +2,15 @@
 using Trixi, OrdinaryDiffEq
 
 dg = DGMulti(polydeg = 3, element_type = Tri(), approximation_type = Polynomial(),
-             surface_integral = SurfaceIntegralWeakForm(FluxHLL()),
+             surface_integral = SurfaceIntegralWeakForm(flux_hll),
              volume_integral = VolumeIntegralWeakForm())
 
 equations = CompressibleEulerEquations2D(1.4)
 initial_condition = initial_condition_convergence_test
 source_terms = source_terms_convergence_test
 
-mesh = DGMultiMesh(dg, cells_per_dimension = (4, 4), periodicity=true)
+cells_per_dimension = (4, 4)
+mesh = DGMultiMesh(dg, cells_per_dimension, periodicity=true)
 semi = SemidiscretizationHyperbolic(mesh, equations, initial_condition, dg,
                                     source_terms = source_terms)
 

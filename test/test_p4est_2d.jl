@@ -7,7 +7,7 @@ include("test_trixi.jl")
 
 EXAMPLES_DIR = joinpath(examples_dir(), "p4est_2d_dgsem")
 
-# Start with a clean environment: remove Trixi output directory if it exists
+# Start with a clean environment: remove Trixi.jl output directory if it exists
 outdir = "out"
 isdir(outdir) && rm(outdir, recursive=true)
 
@@ -23,6 +23,15 @@ isdir(outdir) && rm(outdir, recursive=true)
     @test_trixi_include(joinpath(EXAMPLES_DIR, "elixir_advection_nonconforming_flag.jl"),
       l2   = [3.198940059144588e-5],
       linf = [0.00030636069494005547])
+
+    # Ensure that we do not have excessive memory allocations
+    # (e.g., from type instabilities)
+    let
+      t = sol.t[end]
+      u_ode = sol.u[end]
+      du_ode = similar(u_ode)
+      @test (@allocated Trixi.rhs!(du_ode, u_ode, semi, t)) < 1000
+    end
   end
 
   @trixi_testset "elixir_advection_unstructured_flag.jl" begin
@@ -93,6 +102,15 @@ isdir(outdir) && rm(outdir, recursive=true)
       l2   = [0.020291447969983396, 0.017479614254319948, 0.011387644425613437, 0.0514420126021293],
       linf = [0.3582779022370579, 0.32073537890751663, 0.221818049107692, 0.9209559420400415],
       tspan = (0.0, 0.15))
+
+    # Ensure that we do not have excessive memory allocations
+    # (e.g., from type instabilities)
+    let
+      t = sol.t[end]
+      u_ode = sol.u[end]
+      du_ode = similar(u_ode)
+      @test (@allocated Trixi.rhs!(du_ode, u_ode, semi, t)) < 1000
+    end
   end
 
   @trixi_testset "elixir_euler_forward_step_amr.jl" begin
@@ -127,6 +145,13 @@ isdir(outdir) && rm(outdir, recursive=true)
       tspan = (0.0, 0.1))
   end
 
+  @trixi_testset "elixir_shallowwater_source_terms.jl" begin
+    @test_trixi_include(joinpath(EXAMPLES_DIR, "elixir_shallowwater_source_terms.jl"),
+      l2   = [9.168126407325352e-5, 0.0009795410115453788, 0.002546408320320785, 3.941189812642317e-6],
+      linf = [0.0009903782521019089, 0.0059752684687262025, 0.010941106525454103, 1.2129488214718265e-5],
+      tspan = (0.0, 0.1))
+  end
+
   @trixi_testset "elixir_mhd_alfven_wave.jl" begin
     @test_trixi_include(joinpath(EXAMPLES_DIR, "elixir_mhd_alfven_wave.jl"),
       l2   = [1.0513414461545583e-5, 1.0517900957166411e-6, 1.0517900957304043e-6, 1.511816606372376e-6,
@@ -148,9 +173,14 @@ isdir(outdir) && rm(outdir, recursive=true)
       tspan = (0.0, 0.02))
   end
 
+  @trixi_testset "elixir_linearizedeuler_gaussian_source.jl" begin
+    @test_trixi_include(joinpath(EXAMPLES_DIR, "elixir_linearizedeuler_gaussian_source.jl"),
+      l2 = [0.006047938590548741, 0.0040953286019907035, 0.004222698522497298, 0.006269492499336128],
+      linf = [0.06386175207349379, 0.0378926444850457, 0.041759728067967065, 0.06430136016259067])
+  end
 end
 
-# Clean up afterwards: delete Trixi output directory
+# Clean up afterwards: delete Trixi.jl output directory
 @test_nowarn rm(outdir, recursive=true)
 
 end # module

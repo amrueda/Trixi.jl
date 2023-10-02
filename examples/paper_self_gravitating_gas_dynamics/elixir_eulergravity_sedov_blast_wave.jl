@@ -15,21 +15,21 @@ Adaptation of the Sedov blast wave with self-gravity taken from
   A purely hyperbolic discontinuous Galerkin approach for self-gravitating gas dynamics
   [arXiv: 2008.10593](https://arxiv.org/abs/2008.10593)
 based on
-- http://flash.uchicago.edu/site/flashcode/user_support/flash4_ug_4p62/node184.html#SECTION010114000000000000000
+- https://flash.rochester.edu/site/flashcode/user_support/flash_ug_devel/node187.html#SECTION010114100000000000000
 Should be used together with [`boundary_condition_sedov_self_gravity`](@ref).
 """
 function initial_condition_sedov_self_gravity(x, t, equations::CompressibleEulerEquations2D)
   # Set up polar coordinates
   r = sqrt(x[1]^2 + x[2]^2)
 
-  # Setup based on http://flash.uchicago.edu/site/flashcode/user_support/flash4_ug_4p62/node184.html#SECTION010114000000000000000
+  # Setup based on https://flash.rochester.edu/site/flashcode/user_support/flash_ug_devel/node187.html#SECTION010114100000000000000
   r0 = 0.125 # = 4.0 * smallest dx (for domain length=8 and max-ref=8)
   E = 1.0
   p_inner   = (equations.gamma - 1) * E / (pi * r0^2)
   p_ambient = 1e-5 # = true Sedov setup
 
   # Calculate primitive variables
-  # use a logistic function to tranfer density value smoothly
+  # use a logistic function to transfer density value smoothly
   L  = 1.0    # maximum of function
   x0 = 1.0    # center point of function
   k  = -150.0 # sharpness of transfer
@@ -41,7 +41,7 @@ function initial_condition_sedov_self_gravity(x, t, equations::CompressibleEuler
   v1 = 0.0
   v2 = 0.0
 
-  # use a logistic function to tranfer pressure value smoothly
+  # use a logistic function to transfer pressure value smoothly
   logistic_function_p = p_inner/(1.0 + exp(-k*(r - r0)))
   p = max(logistic_function_p, p_ambient)
 
@@ -59,7 +59,7 @@ Adaptation of the Sedov blast wave with self-gravity taken from
   A purely hyperbolic discontinuous Galerkin approach for self-gravitating gas dynamics
   [arXiv: 2008.10593](https://arxiv.org/abs/2008.10593)
 based on
-- http://flash.uchicago.edu/site/flashcode/user_support/flash4_ug_4p62/node184.html#SECTION010114000000000000000
+- https://flash.rochester.edu/site/flashcode/user_support/flash_ug_devel/node187.html#SECTION010114100000000000000
 Should be used together with [`initial_condition_sedov_self_gravity`](@ref).
 """
 function boundary_condition_sedov_self_gravity(u_inner, orientation, direction, x, t,
@@ -122,7 +122,7 @@ Adaptation of the Sedov blast wave with self-gravity taken from
   A purely hyperbolic discontinuous Galerkin approach for self-gravitating gas dynamics
   [arXiv: 2008.10593](https://arxiv.org/abs/2008.10593)
 based on
-- http://flash.uchicago.edu/site/flashcode/user_support/flash4_ug_4p62/node184.html#SECTION010114000000000000000
+- https://flash.rochester.edu/site/flashcode/user_support/flash_ug_devel/node187.html#SECTION010114100000000000000
 Should be used together with [`boundary_condition_sedov_self_gravity`](@ref).
 """
 function initial_condition_sedov_self_gravity(x, t, equations::HyperbolicDiffusionEquations2D)
@@ -143,7 +143,7 @@ Adaptation of the Sedov blast wave with self-gravity taken from
   A purely hyperbolic discontinuous Galerkin approach for self-gravitating gas dynamics
   [arXiv: 2008.10593](https://arxiv.org/abs/2008.10593)
 based on
-- http://flash.uchicago.edu/site/flashcode/user_support/flash4_ug_4p62/node184.html#SECTION010114000000000000000
+- https://flash.rochester.edu/site/flashcode/user_support/flash_ug_devel/node187.html#SECTION010114100000000000000
 Should be used together with [`initial_condition_sedov_self_gravity`](@ref).
 """
 function boundary_condition_sedov_self_gravity(u_inner, orientation, direction, x, t,

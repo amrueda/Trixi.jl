@@ -78,11 +78,22 @@ tspan = (0.0, 1.5)
 ode = semidiscretize(semi, tspan)
 callbacks = CallbackSet(SummaryCallback())
 time_int_tol = 1.0e-6
-sol = solve(ode, RDPK3SpFSAL49(), abstol=time_int_tol, reltol=time_int_tol,
-            save_everystep=false, callback=callbacks);
+sol = solve(ode, RDPK3SpFSAL49(); abstol=time_int_tol, reltol=time_int_tol,
+            ode_default_options()..., callback=callbacks);
 
 # We can now visualize the solution, which develops a boundary layer at the outflow boundaries.
 
 using Plots
 plot(sol)
 
+
+# ## Package versions
+
+# These results were obtained using the following versions.
+
+using InteractiveUtils
+versioninfo()
+
+using Pkg
+Pkg.status(["Trixi", "OrdinaryDiffEq", "Plots"],
+           mode=PKGMODE_MANIFEST)

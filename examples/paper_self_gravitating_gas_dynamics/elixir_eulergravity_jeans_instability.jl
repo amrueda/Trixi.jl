@@ -15,7 +15,7 @@ The classical Jeans instability taken from
 - Dominik Derigs, Andrew R. Winters, Gregor J. Gassner, Stefanie Walch (2016)
   A Novel High-Order, Entropy Stable, 3D AMR MHD Solver with Guaranteed Positive Pressure
   [arXiv: 1605.03572](https://arxiv.org/abs/1605.03572)
-- Flash manual https://flash.uchicago.edu/site/flashcode/user_support/flash_ug_devel.pdf
+- Flash manual https://flash.rochester.edu/site/flashcode/user_support/flash_ug_devel/node189.html#SECTION010131000000000000000
 in CGS (centimeter, gram, second) units.
 """
 function initial_condition_jeans_instability(x, t,
@@ -31,8 +31,8 @@ function initial_condition_jeans_instability(x, t,
   dens0  = 1.5e7 # g/cm^3
   pres0  = 1.5e7 # dyn/cm^2
   delta0 = 1e-3
-  # set wave vector values for pertubation (units 1/cm)
-  # see FLASH manual: https://flash.uchicago.edu/site/flashcode/user_support/flash_ug_devel.pdf
+  # set wave vector values for perturbation (units 1/cm)
+  # see FLASH manual: https://flash.rochester.edu/site/flashcode/user_support/flash_ug_devel/node189.html#SECTION010131000000000000000
   kx = 2.0*pi/0.5 # 2π/λ_x, λ_x = 0.5
   ky = 0.0   # 2π/λ_y, λ_y = 1e10
   k_dot_x = kx*x[1] + ky*x[2]
@@ -49,11 +49,11 @@ function initial_condition_jeans_instability(x, t,
                                              equations::HyperbolicDiffusionEquations2D)
   # gravity equation: -Δϕ = -4πGρ
   # Constants taken from the FLASH manual
-  # https://flash.uchicago.edu/site/flashcode/user_support/flash_ug_devel.pdf
+  # https://flash.rochester.edu/site/flashcode/user_support/flash_ug_devel/node189.html#SECTION010131000000000000000
   rho0   = 1.5e7
   delta0 = 1e-3
 
-  phi = rho0*delta0 # constant background pertubation magnitude
+  phi = rho0*delta0 # constant background perturbation magnitude
   q1  = 0.0
   q2  = 0.0
   return (phi, q1, q2)

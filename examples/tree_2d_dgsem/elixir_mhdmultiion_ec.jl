@@ -4,8 +4,8 @@ using Trixi
 
 ###############################################################################
 # semidiscretization of the ideal MHD equations
-equations = IdealMhdMultiIonEquations2D(gammas           = (2.0, 2.0),
-                                                 charge_to_mass   = (1.0, 1.0))
+equations = IdealMhdMultiIonEquations2D(gammas = (2.0, 2.0),
+                                        charge_to_mass = (1.0, 1.0))
 
 initial_condition = initial_condition_weak_blast_wave
 
@@ -33,11 +33,11 @@ ode = semidiscretize(semi, tspan)
 
 summary_callback = SummaryCallback()
 
-analysis_interval = 10
+analysis_interval = 100
 analysis_callback = AnalysisCallback(semi, interval=analysis_interval)
 alive_callback = AliveCallback(analysis_interval=analysis_interval)
 
-save_solution = SaveSolutionCallback(interval=100,
+save_solution = SaveSolutionCallback(dt = 0.1, # interval=100,
                                      save_initial_solution=true,
                                      save_final_solution=true,
                                      solution_variables=cons2prim)

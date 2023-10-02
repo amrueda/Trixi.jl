@@ -9,6 +9,10 @@ for human readability.
 #### Added
 
 - Experimental support for 3D parabolic diffusion terms has been added.
+- Non-uniform `TreeMesh` available for hyperbolic-parabolic equations.
+- Capability to set truly discontinuous initial conditions in 1D.
+- Wetting and drying feature and examples for 1D and 2D shallow water equations
+- Subcell positivity limiting support for conservative variables in 2D for `TreeMesh`
 
 #### Changed
 
@@ -19,6 +23,9 @@ for human readability.
 - The macro `@unpack` (re-exported originally from UnPack.jl) is deprecated and
   will be removed. Consider using Julia's standard destructuring syntax
   `(; a, b) = stuff` instead of `@unpack a, b = stuff`.
+- The constructor `DGMultiMesh(dg; cells_per_dimension, kwargs...)` is deprecated
+  and will be removed. The new constructor `DGMultiMesh(dg, cells_per_dimension; kwargs...)`
+  does not have `cells_per_dimesion` as a keyword argument.
 
 #### Removed
 
@@ -164,7 +171,7 @@ for human readability.
   `flux_lax_friedrichs(u_ll, u_rr, orientation, equations::LatticeBoltzmannEquations3D)`
   were actually using the logic of `flux_godunov`. Thus, they were renamed accordingly
   in [#493](https://github.com/trixi-framework/Trixi.jl/pull/493). This is considered a bugfix
-  (released in Trixi v0.3.22).
+  (released in Trixi.jl v0.3.22).
 - The required Julia version is updated to v1.6.
 
 #### Deprecated
