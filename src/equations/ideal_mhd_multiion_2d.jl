@@ -10,26 +10,29 @@
 
 The ideal compressible multi-ion MHD equations in two space dimensions.
 """
-mutable struct IdealMhdMultiIonEquations2D{NVARS, NCOMP, RealT<:Real} <: AbstractIdealMhdMultiIonEquations{2, NVARS, NCOMP}
+mutable struct IdealMhdMultiIonEquations2D{NVARS, NCOMP, RealT<:Real, ElectronPressure} <: AbstractIdealMhdMultiIonEquations{2, NVARS, NCOMP}
   gammas            ::SVector{NCOMP, RealT} # Heat capacity ratios
   charge_to_mass    ::SVector{NCOMP, RealT} # Charge to mass ratios
-  gas_constants     ::SVector{NCOMP, RealT} # Charge to mass ratios
-  molar_masses      ::SVector{NCOMP, RealT} # Charge to mass ratios
+  gas_constants     ::SVector{NCOMP, RealT} # Specific gas constants
+  molar_masses      ::SVector{NCOMP, RealT} # Molar masses (can be provided in any units as they are only used to compute ratios)
   collision_frequency ::RealT               # Single collision frequency scaled with molecular mass of ion 1 (TODO: Replace by matrix of collision frequencies)
+  electron_pressure::ElectronPressure       # Function to compute the electron pressure
 
-  function IdealMhdMultiIonEquations2D{NVARS, NCOMP, RealT}(gammas::SVector{NCOMP, RealT},
-                                                            charge_to_mass::SVector{NCOMP, RealT},
-                                                            gas_constants::SVector{NCOMP, RealT},
-                                                            molar_masses::SVector{NCOMP, RealT},
-                                                            collision_frequency::RealT) where {NVARS, NCOMP, RealT<:Real}
+  function IdealMhdMultiIonEquations2D{NVARS, NCOMP, RealT, ElectronPressure}(
+                                        gammas::SVector{NCOMP, RealT},
+                                        charge_to_mass::SVector{NCOMP, RealT},
+                                        gas_constants::SVector{NCOMP, RealT},
+                                        molar_masses::SVector{NCOMP, RealT},
+                                        collision_frequency::RealT,
+                                        electron_pressure::ElectronPressure) where {NVARS, NCOMP, RealT<:Real, ElectronPressure}
 
     NCOMP >= 1 || throw(DimensionMismatch("`gammas` and `charge_to_mass` have to be filled with at least one value"))
 
-    new(gammas, charge_to_mass, gas_constants, molar_masses, collision_frequency)
+    new(gammas, charge_to_mass, gas_constants, molar_masses, collision_frequency, electron_pressure)
   end
 end
 
-function IdealMhdMultiIonEquations2D(; gammas, charge_to_mass, gas_constants, molar_masses, collision_frequency)
+function IdealMhdMultiIonEquations2D(; gammas, charge_to_mass, gas_constants, molar_masses, collision_frequency, electron_pressure = electron_pressure_zero)
   _gammas         = promote(gammas...)
   _charge_to_mass = promote(charge_to_mass...)
   _gas_constants  = promote(gas_constants...)
@@ -45,7 +48,7 @@ function IdealMhdMultiIonEquations2D(; gammas, charge_to_mass, gas_constants, mo
   __molar_masses   = SVector(map(RealT, _molar_masses))
   __collision_frequency = map(RealT, collision_frequency)
 
-  return IdealMhdMultiIonEquations2D{NVARS, NCOMP, RealT}(__gammas, __charge_to_mass, __gas_constants, __molar_masses, __collision_frequency)
+  return IdealMhdMultiIonEquations2D{NVARS, NCOMP, RealT, typeof(electron_pressure)}(__gammas, __charge_to_mass, __gas_constants, __molar_masses, __collision_frequency, electron_pressure)
 end
 
 @inline Base.real(::IdealMhdMultiIonEquations2D{NVARS, NCOMP, RealT}) where {NVARS, NCOMP, RealT} = RealT
@@ -232,88 +235,6 @@ function source_terms_standard(u, x, t, equations::IdealMhdMultiIonEquations2D)
   return SVector(s)
 end
 
-    """
-    Collision source term, cf. Rueda-Ramirez et al. (2023) and Rubin et al. (2015)
-    """
-    function source_terms_collision(u, x, t, equations::IdealMhdMultiIonEquations2D)        
-        S_std = source_terms_standard(u, x ,t, equations)
-
-        s = zero(MVector{nvariables(equations), eltype(u)})
-        @unpack gammas, charge_to_mass = equations
-        
-        v1_plus, v2_plus, v3_plus, _ = charge_averaged_velocities(u, equations)
-
-        total_electron_charge = zero(u[1])
-        for k in eachcomponent(equations)
-            rho_k = u[(k-1)*5+4]
-            total_electron_charge +=  rho_k * charge_to_mass[k]
-        end
-        
-        p = pressure(u, equations)
-        m_O_plus = 10 #TODO! 
-        m_O2_plus = 20 # TODO!
-        m = [m_O_plus, m_O2_plus] # todo mass vector to equations
-        
-        e = 1.602176634e−19
-        m_e = 9.109e−31 
-        n_e = total_electron_charge
-        alpha = 0.75 # TODO save in equations
-        p_e = alpha * sum(p) # TODO generalize and use in non-conservative flux!
-        T_e = p_e / (n_e * m_e) 
-        k_B = 1.380649e−23
-
-        for k in eachcomponent(equations)
-            # todo add index _k everywhere
-            rho, rho_v1, rho_v2, rho_v3, rho_e = get_component(k, u, equations)
-            v1 = rho_v1 / rho
-            v2 = rho_v2 / rho
-            v3 = rho_v3 / rho
-            T = p[k] / rho
-
-            Z = equations.charge_to_mass[k] * m[k] 
-            n =  rho / m[k]
-            nu_ke = 1.27e-6 *  Z^2 * sqrt(m_e) * n_e / m[k] * T_e^(-3/2) * n * k_B
-                
-            S_q1 = -nu_ke * (v1 - v1_plus)
-            S_q2 = -nu_ke * (v2 - v2_plus)
-            S_q3 = -nu_ke * (v3 - v3_plus)
-
-            S_p1 = 0.0
-            S_p3 = 0.0
-            for l in eachcomponent(equations)
-                rho_l, rho_v1_l, rho_v2_l, rho_v3_l, rho_e_l = get_component(l, u, equations)
-                v1_l = rho_v1_l / rho_l
-                v2_l = rho_v2_l / rho_l
-                v3_l = rho_v3_l / rho_l
-                T_l = p[l] / rho_l
-
-                Z_l = equations.charge_to_mass[l] * m[l] 
-                n_l =  rho_l / m[l]
-                m_kl = m[k] * m[l] / (m[k] + m[l])
-                T_kl = (m[k] * T_l + m[l] * T) / (m[k] + m[l])
-                nu_kl = 1.27e-6 *  Z^2 * Z_l^2 * sqrt(m_kl) / m[k] * n_l * T_kl^(-3/2)
-                
-                S_q1 += nu_kl*(v1_l - v1)
-                S_q2 += nu_kl*(v2_l - v2)
-                S_q3 += nu_kl*(v3_l - v3)
-
-                S_p1 += nu_kl*(n*m[k]) / (m[l] + m[k])*k_B*(T_l - T)
-                S_p3 += nu_kl*rho*m[l] / (m[l] + m[k]) * ((v1_l - v1)^2 + (v2_l - v2)^2 + (v3_l - v3)^2)
-            end
-            S_q1 *= rho
-            S_q2 *= rho
-            S_q3 *= rho
-
-            S_p2 = 2*nu_ke * rho / m[k] * k_B*(T_e - T)
-            S_p4 = 2*nu_ke * rho * ((v1_plus - v1)^2 + (v2_plus - v2)^2 + (v3_plus - v3)^2)
-
-            S_p = 2*S_p1 + S_p2 + (gammas[k] - 1)*S_p3 + S_p4 
-            S_E = S_p / (gammas[k] - 1) + (v1 * S_q1 + v2 * S_q2 + v3 * S_q3)
-            
-            set_component!(s, k, 0.0, S_q1, S_q2, S_q3, S_E, equations)
-        end
-        return SVector{nvariables(equations), real(equations)}(S_std .+ s)
-    end
 """
 Ion-ion collision source terms, cf. Rueda-Ramirez et al. (2023) and Rubin et al. (2015)
 """
@@ -326,8 +247,8 @@ function source_terms_collision_ion_ion(u, x, t, equations::IdealMhdMultiIonEqua
   prim = cons2prim(u, equations)
 
   for k in eachcomponent(equations)
-    rho, v1, v2, v3, p = get_component(k, prim, equations)
-    T = p / (rho * gas_constants[k])
+    rho_k, v1_k, v2_k, v3_k, p_k = get_component(k, prim, equations)
+    T_k = p_k / (rho_k * gas_constants[k])
     
     S_q1 = 0.0
     S_q2 = 0.0
@@ -337,30 +258,46 @@ function source_terms_collision_ion_ion(u, x, t, equations::IdealMhdMultiIonEqua
       rho_l, v1_l, v2_l, v3_l, p_l = get_component(l, prim, equations)
       T_l = p_l / (rho_l * gas_constants[l])
 
+      # Reduced temperature (without scaling with molar mass)
+      T_kl = (molar_masses[l] * T_k + molar_masses[k] * T_l)
+      
+      delta_v2 = (v1_l - v1_k)^2 + (v2_l - v2_k)^2 + (v3_l - v3_k)^2
+
+      # Scale T_kl with molar mass
+      T_kl /= (molar_masses[k] + molar_masses[l])
+
       # Compute effective collision frequency
-      v_kl = collision_frequency * (rho_l * molar_masses[1] / molar_masses[l])^(5/2) * (gas_constants[l] / p_l)^(3/2)
+      v_kl = ( collision_frequency * (rho_l * molar_masses[1] / molar_masses[l]) / T_kl^(3/2) )
 
-      S_q1 += rho * v_kl * (v1_l - v1)
-      S_q2 += rho * v_kl * (v2_l - v2)
-      S_q3 += rho * v_kl * (v3_l - v3)
+      # Correct the collision frequency with the drifting effect (NEW - Rambo & Denavit, Rambo & Procassini)
+      z2 = delta_v2 / (p_l / rho_l + p_k / rho_k)
+      v_kl /= (1 + (2.0 / (9.0 * pi))^(1.0/3.0) * z2 )^(1.5)
 
-      S_E += (3 * molar_masses[1] * gas_constants[1] * (T_l - T) 
-              + molar_masses[l] * ((v1_l - v1)^2 + (v2_l - v2)^2 + (v3_l - v3)^2)) * v_kl * rho / (molar_masses[k] + molar_masses[l])
+      S_q1 += rho_k * v_kl * (v1_l - v1_k)
+      S_q2 += rho_k * v_kl * (v2_l - v2_k)
+      S_q3 += rho_k * v_kl * (v3_l - v3_k)
+
+      S_E += (3 * molar_masses[1] * gas_constants[1] * (T_l - T_k)
+              + molar_masses[l] * delta_v2) * v_kl * rho_k / (molar_masses[k] + molar_masses[l])
     end
 
-    S_E += (v1 * S_q1 + v2 * S_q2 + v3 * S_q3)
+    S_E += (v1_k * S_q1 + v2_k * S_q2 + v3_k * S_q3)
     
     set_component!(s, k, 0.0, S_q1, S_q2, S_q3, S_E, equations)
   end
   return SVector{nvariables(equations), real(equations)}(S_std .+ s)
 end
-    
+  
+function electron_pressure_zero(u, equations::IdealMhdMultiIonEquations2D)
+  return zero(u[1])
+end
+
 """
 Total entropy-conserving non-conservative two-point "flux"" as described in 
 - Rueda-Ramírez et al. (2023)
 The term is composed of three parts
 * The Powell term: Implemented
-* The MHD term: Implemented without the electron pressure (TODO).
+* The MHD term: Implemented
 * The "term 3": Implemented
 """
 @inline function flux_nonconservative_ruedaramirez_etal(u_ll, u_rr, orientation::Integer, equations::IdealMhdMultiIonEquations2D)
@@ -376,6 +313,10 @@ The term is composed of three parts
   mag_norm_ll = B1_ll^2 + B2_ll^2 + B3_ll^2
   mag_norm_rr = B1_rr^2 + B2_rr^2 + B3_rr^2
   mag_norm_avg = 0.5 * (mag_norm_ll + mag_norm_rr)
+
+  # Mean electron pressure
+  pe_mean = 0.5 * (equations.electron_pressure(u_ll, equations) + 
+                   equations.electron_pressure(u_rr, equations))
 
   # Compute charge ratio of u_ll
   charge_ratio_ll = zero(MVector{ncomponents(equations), eltype(u_ll)})
@@ -401,11 +342,10 @@ The term is composed of three parts
 
     for k in eachcomponent(equations)
       # Compute term 2 (MHD)
-      # TODO: Add electron pressure term
-      f2 = charge_ratio_ll[k] * (0.5 * mag_norm_avg - B1_avg * B1_avg) # + pe_mean)
+      f2 = charge_ratio_ll[k] * (0.5 * mag_norm_avg - B1_avg * B1_avg + pe_mean)
       f3 = charge_ratio_ll[k] * (- B1_avg * B2_avg)
       f4 = charge_ratio_ll[k] * (- B1_avg * B3_avg)
-      f5 = 0 # TODO: Add "average" of electron pressure! charge_ratio_ll[k] * pe_mean
+      f5 = vk1_plus_ll[k] * pe_mean 
 
       # Compute term 3 (only needed for NCOMP>1)
       vk1_minus_ll = v1_plus_ll - vk1_plus_ll[k]
@@ -445,11 +385,10 @@ The term is composed of three parts
 
     for k in eachcomponent(equations)
       # Compute term 2 (MHD)
-      # TODO: Add electron pressure term
       f2 = charge_ratio_ll[k] * (- B2_avg * B1_avg) 
-      f3 = charge_ratio_ll[k] * (- B2_avg * B2_avg + 0.5 * mag_norm_avg) # + pe_mean)
+      f3 = charge_ratio_ll[k] * (- B2_avg * B2_avg + 0.5 * mag_norm_avg + pe_mean)
       f4 = charge_ratio_ll[k] * (- B2_avg * B3_avg)
-      f5 = 0 # TODO: Add average of electron pressure! charge_ratio_ll[k] * pe_mean
+      f5 = vk2_plus_ll[k] * pe_mean 
 
       # Compute term 3 (only needed for NCOMP>1)
       vk1_minus_ll = v1_plus_ll - vk1_plus_ll[k]
@@ -488,8 +427,8 @@ end
 """
 Total central non-conservative two-point "flux"", where the symmetric parts are computed with standard averages
 The term is composed of three parts
-* The Powell term: Only needed in 1D for non-constant B1 (TODO). The central Powell "flux" is equivalent to the EC Powell "flux".
-* The MHD term: Implemented without the electron pressure (TODO).
+* The Powell term: Implemented. The central Powell "flux" is equivalent to the EC Powell "flux".
+* The MHD term: Implemented
 * The "term 3": Implemented
 """
 @inline function flux_nonconservative_central(u_ll, u_rr, orientation::Integer, equations::IdealMhdMultiIonEquations2D)
@@ -500,6 +439,9 @@ The term is composed of three parts
 
   # Compute important averages
   mag_norm_rr = B1_rr^2 + B2_rr^2 + B3_rr^2
+
+  # Electron pressure 
+  pe_rr = equations.electron_pressure(u_rr, equations)
 
   # Compute charge ratio of u_ll
   charge_ratio_ll = zero(MVector{ncomponents(equations), eltype(u_ll)})
@@ -524,11 +466,10 @@ The term is composed of three parts
     f[3] = v3_plus_ll * B1_rr
     for k in eachcomponent(equations)
       # Compute term 2 (MHD)
-      # TODO: Add electron pressure term
-      f2 = charge_ratio_ll[k] * (0.5 * mag_norm_rr - B1_rr * B1_rr) # + pe_mean)
+      f2 = charge_ratio_ll[k] * (0.5 * mag_norm_rr - B1_rr * B1_rr + pe_rr)
       f3 = charge_ratio_ll[k] * (- B1_rr * B2_rr)
       f4 = charge_ratio_ll[k] * (- B1_rr * B3_rr)
-      f5 = 0 # TODO! charge_ratio_ll[k] * pe_mean
+      f5 = vk1_plus_ll[k] * pe_rr
 
       # Compute term 3 (only needed for NCOMP>1)
       vk1_minus_rr = v1_plus_rr - vk1_plus_rr[k]
@@ -556,11 +497,10 @@ The term is composed of three parts
 
     for k in eachcomponent(equations)
       # Compute term 2 (MHD)
-      # TODO: Add electron pressure term
       f2 = charge_ratio_ll[k] * (- B2_rr * B1_rr) 
-      f3 = charge_ratio_ll[k] * (- B2_rr * B2_rr + 0.5 * mag_norm_rr) # + pe_mean)
+      f3 = charge_ratio_ll[k] * (- B2_rr * B2_rr + 0.5 * mag_norm_rr + pe_rr)
       f4 = charge_ratio_ll[k] * (- B2_rr * B3_rr)
-      f5 = 0 # TODO! charge_ratio_ll[k] * pe_mean
+      f5 = vk2_plus_ll[k] * pe_rr
 
       # Compute term 3 (only needed for NCOMP>1)
       vk1_minus_rr = v1_plus_rr - vk1_plus_rr[k]

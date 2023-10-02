@@ -205,7 +205,7 @@ export initial_condition_poisson_nonperiodic, source_terms_poisson_nonperiodic,
        boundary_condition_poisson_nonperiodic
 export initial_condition_eoc_test_coupled_euler_gravity,
        source_terms_eoc_test_coupled_euler_gravity, source_terms_eoc_test_euler
-export source_terms_collision, source_terms_collision_ion_ion
+export source_terms_collision_ion_ion
 
 export cons2cons, cons2prim, prim2cons, cons2macroscopic, cons2state, cons2mean,
        cons2entropy, entropy2cons
@@ -216,6 +216,7 @@ export entropy, energy_total, energy_kinetic, energy_internal, energy_magnetic,
        enstrophy
 export lake_at_rest_error
 export ncomponents, eachcomponent
+export get_component
 
 export TreeMesh, StructuredMesh, UnstructuredMesh2D, P4estMesh, T8codeMesh
 
