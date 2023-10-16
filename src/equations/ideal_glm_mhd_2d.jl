@@ -397,7 +397,55 @@ the non-conservative staggered "fluxes" for subcell limiting. See, e.g.,
     return f
 end
 """
-    flux_nonconservative_powell2(u_ll, orientation::Integer,
+    flux_nonconservative_powell2(f, f_sym, u_ll, orientation::Integer,
+                                equations::IdealGlmMhdEquations2D, 
+                                nonconservative_type::NonConservativeLocal,
+                                noncons_term::Integer)
+
+Local part of the Powell and GLM non-conservative terms. Needed for the calculation of 
+the non-conservative staggered "fluxes" for subcell limiting. See, e.g.,
+- Rueda-Ramírez, Gassner (2023). A Flux-Differencing Formula for Split-Form Summation By Parts
+  Discretizations of Non-Conservative Systems. https://arxiv.org/pdf/2211.14009.pdf.
+This routine takes the symmetric part of the staggered flux `f_sym`, multiplies it with the 
+local part, and adds it to `f`.
+Even though this routine modifies its arguments and returns nothing, we omit the exclamation mark
+in the end to make it compatible with the other non-conservative flux functions
+"""
+@inline function flux_nonconservative_powell2(f, f_sym, u_ll, orientation::Integer,
+                                              equations::IdealGlmMhdEquations2D,
+                                              nonconservative_type::NonConservativeLocal,
+                                              noncons_term::Integer)
+    rho_ll, rho_v1_ll, rho_v2_ll, rho_v3_ll, rho_e_ll, B1_ll, B2_ll, B3_ll, psi_ll = u_ll
+
+    if noncons_term == 1
+        # Powell nonconservative term:   (0, B_1, B_2, B_3, v⋅B, v_1, v_2, v_3, 0)
+        v1_ll = rho_v1_ll / rho_ll
+        v2_ll = rho_v2_ll / rho_ll
+        v3_ll = rho_v3_ll / rho_ll
+        v_dot_B_ll = v1_ll * B1_ll + v2_ll * B2_ll + v3_ll * B3_ll
+        f[2] += f_sym[2] * B1_ll
+        f[3] += f_sym[3] * B2_ll
+        f[4] += f_sym[4] * B3_ll
+        f[5] += f_sym[5] * v_dot_B_ll
+        f[6] += f_sym[6] * v1_ll
+        f[7] += f_sym[7] * v2_ll
+        f[8] += f_sym[8] * v3_ll
+    else #noncons_term ==2
+        # Galilean nonconservative term: (0, 0, 0, 0, ψ v_{1,2}, 0, 0, 0, v_{1,2})
+        if orientation == 1
+            v1_ll = rho_v1_ll / rho_ll
+            f[5] += f_sym[5] * v1_ll * psi_ll
+            f[9] += f_sym[9] * v1_ll
+        else #orientation == 2
+            v2_ll = rho_v2_ll / rho_ll
+            f[5] += f_sym[5] * v2_ll * psi_ll
+            f[9] += f_sym[9] * v2_ll
+        end
+    end
+    return f
+end
+"""
+    flux_nonconservative_powell2(u_ll, u_rr, orientation::Integer,
                                 equations::IdealGlmMhdEquations2D, 
                                 nonconservative_type::NonConservativeSymmetric,
                                 noncons_term::Integer)
@@ -454,6 +502,54 @@ the non-conservative staggered "fluxes" for subcell limiting. See, e.g.,
     end
 
     return f
+end
+"""
+    flux_nonconservative_powell2(f1, f2, factor1, factor2, u_ll, u_rr, orientation::Integer,
+                                equations::IdealGlmMhdEquations2D, 
+                                nonconservative_type::NonConservativeSymmetric,
+                                noncons_term::Integer)
+
+Symmetric part of the Powell and GLM non-conservative terms. Needed for the calculation of 
+the non-conservative staggered "fluxes" for subcell limiting. See, e.g.,
+- Rueda-Ramírez, Gassner (2023). A Flux-Differencing Formula for Split-Form Summation By Parts
+  Discretizations of Non-Conservative Systems. https://arxiv.org/pdf/2211.14009.pdf.
+This routine computes the symmetric part of the staggered flux, multiplies it with factor1 and adds it
+to f1, then multiplies it with factor2 and adds it to f2.
+Even though this routine modifies its arguments and returns nothing, we omit the exclamation mark
+in the end to make it compatible with the other non-conservative flux functions
+"""
+@inline function flux_nonconservative_powell2(f1, f2, factor1, factor2, u_ll, u_rr, orientation::Integer,
+                                              equations::IdealGlmMhdEquations2D,
+                                              nonconservative_type::NonConservativeSymmetric,
+                                              noncons_term::Integer)
+    rho_ll, rho_v1_ll, rho_v2_ll, rho_v3_ll, rho_e_ll, B1_ll, B2_ll, B3_ll, psi_ll = u_ll
+    rho_rr, rho_v1_rr, rho_v2_rr, rho_v3_rr, rho_e_rr, B1_rr, B2_rr, B3_rr, psi_rr = u_rr
+
+    if noncons_term == 1
+        # Powell nonconservative term:   (0, B_1, B_2, B_3, v⋅B, v_1, v_2, v_3, 0)
+        if orientation == 1
+            B1_avg = (B1_ll + B1_rr)#* 0.5 # We remove the 0.5 because the flux is always multiplied by 0.5
+            for v in 2:8
+                f1[v] += factor1 * B1_avg
+                f2[v] += factor2 * B1_avg
+            end
+        else # orientation == 2
+            B2_avg = (B2_ll + B2_rr)#* 0.5 # We remove the 0.5 because the flux is always multiplied by 0.5
+            for v in 2:8
+                f1[v] += factor1 * B2_avg
+                f2[v] += factor2 * B2_avg
+            end
+        end
+    else #noncons_term == 2
+        # Galilean nonconservative term: (0, 0, 0, 0, ψ v_{1,2}, 0, 0, 0, v_{1,2})
+        psi_avg = (psi_ll + psi_rr)#* 0.5 # We remove the 0.5 because the flux is always multiplied by 0.5
+        f1[5] += factor1 * psi_avg
+        f1[9] += factor1 * psi_avg
+        f2[5] += factor2 * psi_avg
+        f2[9] += factor2 * psi_avg
+    end
+
+    return nothing
 end
 
 """
