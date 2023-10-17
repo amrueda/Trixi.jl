@@ -281,6 +281,8 @@ end
             fhat1_R[v, i + 1, j] = fhat_temp[v, i + 1, j]
         end
         # Nonconservative part
+        u_ll = get_node_vars(u, equations, dg, i, j, element)
+        u_rr = get_node_vars(u, equations, dg, i + 1, j, element)
         for noncons in 1:nnoncons(equations)
             for v in eachvariable(equations)
                 fhat_noncons_temp[v, noncons, i + 1, j] = fhat_noncons_temp[v, noncons, i,
@@ -289,10 +291,8 @@ end
                                                         flux_noncons_temp[v, noncons, i,
                                                                             j]
             end
-            u_ll = get_node_vars(u, equations, dg, i, j, element)
             volume_flux_noncons(view(fhat1_L,:, i + 1, j), view(fhat_noncons_temp,:, noncons, i + 1, j), 
                                 u_ll, 1, equations, NonConservativeLocal(), noncons)
-            u_rr = get_node_vars(u, equations, dg, i + 1, j, element)
             volume_flux_noncons(view(fhat1_R,:, i + 1, j), view(fhat_noncons_temp,:, noncons, i + 1, j), 
                                 u_rr, 1, equations, NonConservativeLocal(), noncons)
         end
@@ -341,6 +341,8 @@ end
             fhat2_R[v, i, j + 1] = fhat_temp[v, i, j + 1]
         end
         # Nonconservative part
+        u_ll = get_node_vars(u, equations, dg, i, j, element)
+        u_rr = get_node_vars(u, equations, dg, i, j + 1, element)
         for noncons in 1:nnoncons(equations)
             for v in eachvariable(equations)
                 fhat_noncons_temp[v, noncons, i, j + 1] = fhat_noncons_temp[v, noncons, i,
@@ -349,10 +351,8 @@ end
                                                         flux_noncons_temp[v, noncons, i,
                                                                             j]
             end
-            u_ll = get_node_vars(u, equations, dg, i, j, element)
             volume_flux_noncons(view(fhat2_L,:, i, j + 1), view(fhat_noncons_temp,:, noncons, i, j + 1), 
                                 u_ll, 2, equations, NonConservativeLocal(), noncons)
-            u_rr = get_node_vars(u, equations, dg, i, j + 1, element)
             volume_flux_noncons(view(fhat2_R,:, i, j + 1), view(fhat_noncons_temp,:, noncons, i, j + 1), 
                                 u_rr, 2, equations, NonConservativeLocal(), noncons)
         end
