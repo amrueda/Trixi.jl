@@ -12,6 +12,11 @@ function get_element_variables!(element_variables, u, mesh, equations,
     nothing
 end
 
+function get_node_variables!(node_variables, mesh, equations,
+                             volume_integral::AbstractVolumeIntegral, dg, cache)
+    nothing
+end
+
 """
     VolumeIntegralStrongForm()
 
@@ -179,7 +184,8 @@ end
                                   volume_flux_dg, volume_flux_fv)
 
 A subcell limiting volume integral type for DG methods based on subcell blending approaches
-with a low-order FV method. Used with limiter [`SubcellLimiterIDP`](@ref).
+with a low-order FV method. Used with the limiters [`SubcellLimiterIDP`](@ref) and
+[`SubcellLimiterMCL`](@ref).
 
 !!! warning "Experimental implementation"
     This is an experimental feature and may change in future releases.
@@ -212,6 +218,23 @@ function Base.show(io::IO, mime::MIME"text/plain",
         show(increment_indent(io), mime, integral.limiter)
         summary_footer(io)
     end
+end
+
+function get_element_variables!(element_variables, u, mesh, equations,
+                                volume_integral::VolumeIntegralSubcellLimiting, dg,
+                                cache)
+    if volume_integral.limiter.smoothness_indicator
+        # call the element-wise limiter to get up-to-date values for IO
+        volume_integral.limiter.IndicatorHG(u, mesh, equations, dg, cache)
+        get_element_variables!(element_variables, volume_integral.limiter,
+                               volume_integral)
+    end
+end
+
+function get_node_variables!(node_variables, mesh, equations,
+                             volume_integral::VolumeIntegralSubcellLimiting, dg, cache)
+    get_node_variables!(node_variables, volume_integral.limiter, volume_integral,
+                        equations)
 end
 
 # TODO: FD. Should this definition live in a different file because it is
@@ -401,6 +424,10 @@ Base.summary(io::IO, dg::DG) = print(io, "DG(" * summary(dg.basis) * ")")
 function get_element_variables!(element_variables, u, mesh, equations, dg::DG, cache)
     get_element_variables!(element_variables, u, mesh, equations, dg.volume_integral,
                            dg, cache)
+end
+
+function get_node_variables!(node_variables, mesh, equations, dg::DG, cache)
+    get_node_variables!(node_variables, mesh, equations, dg.volume_integral, dg, cache)
 end
 
 const MeshesDGSEM = Union{TreeMesh, StructuredMesh, UnstructuredMesh2D, P4estMesh,

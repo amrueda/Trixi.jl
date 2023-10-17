@@ -162,7 +162,8 @@ export GradientVariablesPrimitive, GradientVariablesEntropy
 export flux, flux_central, flux_lax_friedrichs, flux_hll, flux_hllc, flux_hlle,
        flux_godunov,
        flux_chandrashekar, flux_ranocha, flux_derigs_etal, flux_hindenlang_gassner,
-       flux_nonconservative_powell, flux_ruedaramirez_etal, flux_nonconservative_ruedaramirez_etal, flux_nonconservative_central, 
+       flux_nonconservative_powell, flux_nonconservative_powell2, 
+       flux_ruedaramirez_etal, flux_nonconservative_ruedaramirez_etal, flux_nonconservative_central, 
        flux_kennedy_gruber, flux_shima_etal, flux_ec,
        flux_fjordholm_etal, flux_nonconservative_fjordholm_etal, flux_es_fjordholm_etal,
        flux_wintermeyer_etal, flux_nonconservative_wintermeyer_etal,
@@ -187,11 +188,13 @@ export splitting_steger_warming, splitting_vanleer_haenel,
 export initial_condition_constant,
        initial_condition_gauss,
        initial_condition_density_wave,
+       initial_condition_density_wave_highdensity,
        initial_condition_weak_blast_wave
 
 export boundary_condition_do_nothing,
        boundary_condition_periodic,
        BoundaryConditionDirichlet,
+       BoundaryConditionCharacteristic,
        BoundaryConditionNeumann,
        boundary_condition_noslip_wall,
        boundary_condition_slip_wall,
@@ -234,8 +237,9 @@ export DG,
        SurfaceIntegralUpwind,
        MortarL2
 
-export VolumeIntegralSubcellLimiting,
-       SubcellLimiterIDP, SubcellLimiterIDPCorrection
+export VolumeIntegralSubcellLimiting, BoundsCheckCallback,
+       SubcellLimiterIDP, SubcellLimiterIDPCorrection,
+       SubcellLimiterMCL
 
 export nelements, nnodes, nvariables,
        eachelement, eachnode, eachvariable
@@ -254,7 +258,7 @@ export SemidiscretizationCoupled
 export SummaryCallback, SteadyStateCallback, AnalysisCallback, AliveCallback,
        SaveRestartCallback, SaveSolutionCallback, TimeSeriesCallback, VisualizationCallback,
        AveragingCallback,
-       AMRCallback, StepsizeCallback,
+       AMRCallback, StepsizeCallback, LimitingAnalysisCallback,
        GlmSpeedCallback, LBMCollisionCallback, EulerAcousticsCouplingCallback,
        TrivialCallback, AnalysisCallbackCoupled
 

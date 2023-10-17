@@ -188,6 +188,44 @@ end
     return flux
 end
 
+"""
+    BoundaryConditionCharacteristic(outer_boundary_value_function)
+
+"""
+struct BoundaryConditionCharacteristic{B, C}
+    outer_boundary_value_function::B
+    boundary_value_function::C
+end
+
+function BoundaryConditionCharacteristic(outer_boundary_value_function)
+    BoundaryConditionCharacteristic{typeof(outer_boundary_value_function),
+                                    typeof(characteristic_boundary_value_function)}(outer_boundary_value_function,
+                                                                                    characteristic_boundary_value_function)
+end
+
+# Dirichlet-type boundary condition for use with TreeMesh or StructuredMesh
+@inline function (boundary_condition::BoundaryConditionCharacteristic)(u_inner,
+                                                                       orientation_or_normal,
+                                                                       direction,
+                                                                       x, t,
+                                                                       surface_flux_function,
+                                                                       equations)
+    u_boundary = characteristic_boundary_value_function(boundary_condition.outer_boundary_value_function,
+                                                        u_inner, orientation_or_normal,
+                                                        direction, x, t, equations)
+
+    # Calculate boundary flux
+    if iseven(direction) # u_inner is "left" of boundary, u_boundary is "right" of boundary
+        flux = surface_flux_function(u_inner, u_boundary, orientation_or_normal,
+                                     equations)
+    else # u_boundary is "left" of boundary, u_inner is "right" of boundary
+        flux = surface_flux_function(u_boundary, u_inner, orientation_or_normal,
+                                     equations)
+    end
+
+    return flux
+end
+
 # operator types used for dispatch on parabolic boundary fluxes
 struct Gradient end
 struct Divergence end
@@ -207,7 +245,22 @@ where `x` specifies the coordinates, `t` is the current time, and `equation` is 
 struct BoundaryConditionNeumann{B}
     boundary_normal_flux_function::B
 end
+"""
+    NonConservativeLocal()
 
+Struct used for multiple dispatch on non-conservative flux functions in the format of "local * symmetric". 
+When the argument `nonconservative_type` is of type `NonConservativeLocal`, 
+the function returns the local part of the non-conservative term.
+"""
+struct NonConservativeLocal end
+"""
+    NonConservativeSymmetric()
+
+Struct used for multiple dispatch on non-conservative flux functions in the format of "local * symmetric". 
+When the argument `nonconservative_type` is of type `NonConservativeSymmetric`, 
+the function returns the symmetric part of the non-conservative term.
+"""
+struct NonConservativeSymmetric end
 # set sensible default values that may be overwritten by specific equations
 """
     have_nonconservative_terms(equations)
@@ -220,6 +273,12 @@ example of equations with nonconservative terms.
 The return value will be `True()` or `False()` to allow dispatching on the return type.
 """
 have_nonconservative_terms(::AbstractEquations) = False()
+"""
+    nnoncons(equations)
+Number of nonconservative terms for a particular equation. The default is 0 and 
+it must be defined for each nonconservative equation independently.
+"""
+nnoncons(::AbstractEquations) = 0
 have_constant_speed(::AbstractEquations) = False()
 
 default_analysis_errors(::AbstractEquations) = (:l2_error, :linf_error)

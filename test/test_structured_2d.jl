@@ -124,6 +124,20 @@ isdir(outdir) && rm(outdir, recursive=true)
       restart_file="restart_000036.h5")
   end
 
+  @trixi_testset "elixir_euler_convergence_wavingflag_IDP.jl" begin
+    @test_trixi_include(joinpath(EXAMPLES_DIR, "elixir_euler_convergence_wavingflag_IDP.jl"),
+      l2   = [0.3398358793878119, 0.03398358793878129, 0.06796717587756244, 0.008495896984696072],
+      linf = [0.8360446582060936, 0.08360446582060972, 0.16720893164122444, 0.02090111645397741],
+      tspan = (0.0, 0.5))
+  end
+
+  @trixi_testset "elixir_euler_convergence_wavingflag_MCL.jl" begin
+    @test_trixi_include(joinpath(EXAMPLES_DIR, "elixir_euler_convergence_wavingflag_MCL.jl"),
+      l2   = [0.33983417649330827, 0.033983417649330924, 0.06796683529866161, 0.008495854412336827],
+      linf = [0.8360446582068146, 0.083604465820679, 0.16720893164136671, 0.02090111645399162],
+      tspan = (0.0, 0.5))
+  end
+
   @trixi_testset "elixir_euler_source_terms.jl" begin
     @test_trixi_include(joinpath(EXAMPLES_DIR, "elixir_euler_source_terms.jl"),
       # Expected errors are exactly the same as with TreeMesh!
@@ -171,6 +185,13 @@ isdir(outdir) && rm(outdir, recursive=true)
       linf = [8.297006495561199e-5, 8.663281475951301e-5, 0.00012264160606778596, 0.00041818802502024965])
   end
 
+  @trixi_testset "elixir_euler_source_terms_sc_subcell.jl" begin
+    @test_trixi_include(joinpath(EXAMPLES_DIR, "elixir_euler_source_terms_sc_subcell.jl"),
+      l2   = [0.00816013114351954, 0.008658251709937477, 0.009351905651482216, 0.027757012781694318],
+      linf = [0.027225615981281148, 0.040734036539016305, 0.0381940733564341, 0.08080650914262844],
+      tspan = (0.0, 0.5))
+  end
+
   @trixi_testset "elixir_euler_source_terms_waving_flag.jl" begin
     @test_trixi_include(joinpath(EXAMPLES_DIR, "elixir_euler_source_terms_waving_flag.jl"),
       l2   = [2.991891317562739e-5, 3.6063177168283174e-5, 2.7082941743640572e-5, 0.00011414695350996946],
@@ -184,12 +205,60 @@ isdir(outdir) && rm(outdir, recursive=true)
       atol = 7.0e-13)
   end
 
+  @trixi_testset "elixir_euler_free_stream_sc_subcell.jl" begin
+    @test_trixi_include(joinpath(EXAMPLES_DIR, "elixir_euler_free_stream_sc_subcell.jl"),
+      l2   = [2.6224749465938795e-14, 1.6175366858083413e-14, 2.358782725951525e-14, 5.910156539173304e-14],
+      linf = [1.1546319456101628e-14, 1.084687895058778e-13, 1.7050250100680842e-13, 2.0250467969162855e-13],
+      atol = 1.0e-13,
+      cells_per_dimension = (8, 8))
+  end
+
+  @trixi_testset "elixir_euler_free_stream_MCL.jl" begin
+    @test_trixi_include(joinpath(EXAMPLES_DIR, "elixir_euler_free_stream_MCL.jl"),
+      l2   = [3.532639560334565e-14, 1.4787576718355913e-14, 2.109573923923632e-14, 2.54649935281524e-14],
+      linf = [7.993605777301127e-15, 1.1611545058798356e-13, 1.7619239400801234e-13, 2.007283228522283e-13],
+      atol = 1.0e-13,
+      cells_per_dimension = (8, 8))
+  end
+
   @trixi_testset "elixir_euler_free_stream.jl with FluxRotated(flux_lax_friedrichs)" begin
     @test_trixi_include(joinpath(EXAMPLES_DIR, "elixir_euler_free_stream.jl"),
       surface_flux=FluxRotated(flux_lax_friedrichs),
       l2   = [2.063350241405049e-15, 1.8571016296925367e-14, 3.1769447886391905e-14, 1.4104095258528071e-14],
       linf = [1.9539925233402755e-14, 2.9791447087035294e-13, 6.502853810985698e-13, 2.7000623958883807e-13],
       atol = 7.0e-13)
+  end
+
+  @trixi_testset "elixir_euler_double_mach.jl" begin
+    @test_trixi_include(joinpath(EXAMPLES_DIR, "elixir_euler_double_mach.jl"),
+      l2   = [0.8955457632754655, 6.8117495933240235, 3.2697118944675716, 77.5174041919109],
+      linf = [10.16165871096883, 133.2522870057006, 38.23157147773949, 1470.3950960145828],
+      initial_refinement_level = 3,
+      tspan = (0.0, 0.05))
+  end
+
+  @trixi_testset "elixir_euler_double_mach_MCL.jl" begin
+    @test_trixi_include(joinpath(EXAMPLES_DIR, "elixir_euler_double_mach_MCL.jl"),
+      l2   = [0.9266313242695542, 7.071517579972717, 3.2627078543492787, 80.24631724351916],
+      linf = [14.244598580563007, 138.4745277257612, 38.69633620234036, 1574.6686216469134],
+      initial_refinement_level = 3,
+      tspan = (0.0, 0.05))
+  end
+
+  @trixi_testset "elixir_euler_shock_upstream_sc_subcell.jl" begin
+    @test_trixi_include(joinpath(EXAMPLES_DIR, "elixir_euler_shock_upstream_sc_subcell.jl"),
+      l2   = [1.2351468819080416, 1.1269856120551724, 1.7239124305681928, 11.715260007491556],
+      linf = [5.385492532917423, 6.575446146030286, 10.0652310822613, 51.00901293102744],
+      cells_per_dimension = (8, 12),
+      tspan = (0.0, 0.5))
+  end
+
+  @trixi_testset "elixir_euler_shock_upstream_MCL.jl" begin
+    @test_trixi_include(joinpath(EXAMPLES_DIR, "elixir_euler_shock_upstream_MCL.jl"),
+      l2   = [1.2607430289877726, 1.1565837325291355, 1.7791790302458714, 11.891223800389232],
+      linf = [5.68876088477983, 8.165554425950146, 10.859100194836538, 50.25822408989214],
+      cells_per_dimension = (8, 12),
+      tspan = (0.0, 0.5))
   end
 
   @trixi_testset "elixir_euler_source_terms_nonperiodic.jl" begin
