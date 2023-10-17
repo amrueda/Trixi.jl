@@ -335,10 +335,10 @@ The term is composed of three parts
   f = zero(MVector{nvariables(equations), eltype(u_ll)})
   
   if orientation == 1
-    # Entries of Powell term for induction equation (already in Trixi's non-conservative form)
-    f[1] = v1_plus_ll * B1_rr
-    f[2] = v2_plus_ll * B1_rr
-    f[3] = v3_plus_ll * B1_rr
+    # Entries of Powell term for induction equation
+    f[1] = v1_plus_ll * B1_avg
+    f[2] = v2_plus_ll * B1_avg
+    f[3] = v3_plus_ll * B1_avg
 
     for k in eachcomponent(equations)
       # Compute term 2 (MHD)
@@ -360,28 +360,21 @@ The term is composed of three parts
       f5 += (B2_ll * (vk1_minus_avg * B2_avg - vk2_minus_avg * B1_avg) + 
              B3_ll * (vk1_minus_avg * B3_avg - vk3_minus_avg * B1_avg) )
 
-      # Adjust non-conservative terms 2 and 3 to Trixi discretization: CHANGE!?!
-      f2 = 2 * f2 - charge_ratio_ll[k] * (0.5 * mag_norm_ll - B1_ll * B1_ll)
-      f3 = 2 * f3 + charge_ratio_ll[k] * B1_ll * B2_ll
-      f4 = 2 * f4 + charge_ratio_ll[k] * B1_ll * B3_ll
-      f5 =(2 * f5 - B2_ll * (vk1_minus_ll * B2_ll - vk2_minus_ll * B1_ll) 
-                  - B3_ll * (vk1_minus_ll * B3_ll - vk3_minus_ll * B1_ll) )
-      
-      # Compute Powell term (already consistent with Trixi's non-conservative discretization)
-      f2 += charge_ratio_ll[k] * B1_ll * B1_rr
-      f3 += charge_ratio_ll[k] * B2_ll * B1_rr
-      f4 += charge_ratio_ll[k] * B3_ll * B1_rr
-      f5 += (v1_plus_ll * B1_ll + v2_plus_ll * B2_ll + v3_plus_ll * B3_ll) * B1_rr
+      # Compute Powell term
+      f2 += charge_ratio_ll[k] * B1_ll * B1_avg
+      f3 += charge_ratio_ll[k] * B2_ll * B1_avg
+      f4 += charge_ratio_ll[k] * B3_ll * B1_avg
+      f5 += (v1_plus_ll * B1_ll + v2_plus_ll * B2_ll + v3_plus_ll * B3_ll) * B1_avg
 
       # Append to the flux vector
       set_component!(f, k, 0, f2, f3, f4, f5, equations)
     end
 
   else #if orientation == 2
-    # Entries of Powell term for induction equation (already in Trixi's non-conservative form)
-    f[1] = v1_plus_ll * B2_rr
-    f[2] = v2_plus_ll * B2_rr
-    f[3] = v3_plus_ll * B2_rr
+    # Entries of Powell term for induction equation
+    f[1] = v1_plus_ll * B2_avg
+    f[2] = v2_plus_ll * B2_avg
+    f[3] = v3_plus_ll * B2_avg
 
     for k in eachcomponent(equations)
       # Compute term 2 (MHD)
@@ -402,26 +395,20 @@ The term is composed of three parts
       vk3_minus_avg = 0.5 * (vk3_minus_ll + vk3_minus_rr)
       f5 += (B1_ll * (vk2_minus_avg * B1_avg - vk1_minus_avg * B2_avg) + 
              B3_ll * (vk2_minus_avg * B3_avg - vk3_minus_avg * B2_avg) )
-
-      # Adjust non-conservative terms 2 and 3 to Trixi discretization: CHANGE!?!
-      f2 = 2 * f2 + charge_ratio_ll[k] * B2_ll * B1_ll
-      f3 = 2 * f3 - charge_ratio_ll[k] * (0.5 * mag_norm_ll  - B2_ll * B2_ll)
-      f4 = 2 * f4 + charge_ratio_ll[k] * B2_ll * B3_ll
-      f5 = (2 * f5 - B1_ll * (vk2_minus_ll * B1_ll - vk1_minus_ll * B2_ll) 
-                   - B3_ll * (vk2_minus_ll * B3_ll - vk3_minus_ll * B2_ll) )
       
-      # Compute Powell term (already consistent with Trixi's non-conservative discretization)
-      f2 += charge_ratio_ll[k] * B1_ll * B2_rr
-      f3 += charge_ratio_ll[k] * B2_ll * B2_rr
-      f4 += charge_ratio_ll[k] * B3_ll * B2_rr
-      f5 += (v1_plus_ll * B1_ll + v2_plus_ll * B2_ll + v3_plus_ll * B3_ll) * B2_rr
+      # Compute Powell term
+      f2 += charge_ratio_ll[k] * B1_ll * B2_avg
+      f3 += charge_ratio_ll[k] * B2_ll * B2_avg
+      f4 += charge_ratio_ll[k] * B3_ll * B2_avg
+      f5 += (v1_plus_ll * B1_ll + v2_plus_ll * B2_ll + v3_plus_ll * B3_ll) * B2_avg
       
       # Append to the flux vector
       set_component!(f, k, 0, f2, f3, f4, f5, equations)
     end
   end
 
-  return SVector(f)
+  # We multiply by 2 to compensate the multiplication by 0.5 in the Trixi routines
+  return SVector(2 * f)
 end
 
 """
@@ -439,9 +426,13 @@ The term is composed of three parts
 
   # Compute important averages
   mag_norm_rr = B1_rr^2 + B2_rr^2 + B3_rr^2
+  mag_norm_ll = B1_ll^2 + B2_ll^2 + B3_ll^2
+  mag_norm_avg = 0.5 * (mag_norm_ll + mag_norm_rr)
 
   # Electron pressure 
   pe_rr = equations.electron_pressure(u_rr, equations)
+  pe_ll = equations.electron_pressure(u_ll, equations)
+  pe_avg = 0.5 * (pe_ll + pe_rr)
 
   # Compute charge ratio of u_ll
   charge_ratio_ll = zero(MVector{ncomponents(equations), eltype(u_ll)})
@@ -460,69 +451,73 @@ The term is composed of three parts
   f = zero(MVector{nvariables(equations), eltype(u_ll)})
   
   if orientation == 1
-    # Entries of Powell term for induction equation (already in Trixi's non-conservative form)
-    f[1] = v1_plus_ll * B1_rr
-    f[2] = v2_plus_ll * B1_rr
-    f[3] = v3_plus_ll * B1_rr
+    B1_avg = 0.5 * (B1_ll + B1_rr)
+    # Entries of Powell term for induction equation
+    f[1] = v1_plus_ll * B1_avg
+    f[2] = v2_plus_ll * B1_avg
+    f[3] = v3_plus_ll * B1_avg
     for k in eachcomponent(equations)
       # Compute term 2 (MHD)
-      f2 = charge_ratio_ll[k] * (0.5 * mag_norm_rr - B1_rr * B1_rr + pe_rr)
-      f3 = charge_ratio_ll[k] * (- B1_rr * B2_rr)
-      f4 = charge_ratio_ll[k] * (- B1_rr * B3_rr)
-      f5 = vk1_plus_ll[k] * pe_rr
+      f2 = charge_ratio_ll[k] * (0.5 * mag_norm_avg - 0.5 * B1_ll * B1_ll - 0.5 * B1_rr * B1_rr + pe_avg)
+      f3 = charge_ratio_ll[k] * (- 0.5 * B1_ll * B2_ll - 0.5 * B1_rr * B2_rr)
+      f4 = charge_ratio_ll[k] * (- 0.5 * B1_ll * B3_ll - 0.5 * B1_rr * B3_rr)
+      f5 = vk1_plus_ll[k] * pe_avg
 
       # Compute term 3 (only needed for NCOMP>1)
+      vk1_minus_ll = v1_plus_ll - vk1_plus_ll[k]
+      vk2_minus_ll = v2_plus_ll - vk2_plus_ll[k]
+      vk3_minus_ll = v3_plus_ll - vk3_plus_ll[k]
       vk1_minus_rr = v1_plus_rr - vk1_plus_rr[k]
       vk2_minus_rr = v2_plus_rr - vk2_plus_rr[k]
       vk3_minus_rr = v3_plus_rr - vk3_plus_rr[k]
-      f5 += (B2_ll * (vk1_minus_rr * B2_rr - vk2_minus_rr * B1_rr) + 
-             B3_ll * (vk1_minus_rr * B3_rr - vk3_minus_rr * B1_rr) )
+      f5 += (B2_ll * (0.5 * (vk1_minus_ll * B2_ll - vk2_minus_ll * B1_ll) + 0.5 * (vk1_minus_rr * B2_rr - vk2_minus_rr * B1_rr) ) + 
+             B3_ll * (0.5 * (vk1_minus_ll * B3_ll - vk3_minus_ll * B1_ll) + 0.5 * (vk1_minus_rr * B3_rr - vk3_minus_rr * B1_rr) ) )
 
-      # Compute Powell term (already consistent with Trixi's non-conservative discretization)
-      f2 += charge_ratio_ll[k] * B1_ll * B1_rr
-      f3 += charge_ratio_ll[k] * B2_ll * B1_rr
-      f4 += charge_ratio_ll[k] * B3_ll * B1_rr
-      f5 += (v1_plus_ll * B1_ll + v2_plus_ll * B2_ll + v3_plus_ll * B3_ll) * B1_rr
-
-      # It's not needed to adjust to Trixi's non-conservative form
+      # Compute Powell term
+      f2 += charge_ratio_ll[k] * B1_ll * B1_avg
+      f3 += charge_ratio_ll[k] * B2_ll * B1_avg
+      f4 += charge_ratio_ll[k] * B3_ll * B1_avg
+      f5 += (v1_plus_ll * B1_ll + v2_plus_ll * B2_ll + v3_plus_ll * B3_ll) * B1_avg
 
       # Append to the flux vector
       set_component!(f, k, 0, f2, f3, f4, f5, equations)
     end
   else #if orientation == 2
-    # Entries of Powell term for induction equation (already in Trixi's non-conservative form)
-    f[1] = v1_plus_ll * B2_rr
-    f[2] = v2_plus_ll * B2_rr
-    f[3] = v3_plus_ll * B2_rr
+    B2_avg = 0.5 * (B2_ll + B2_rr)
+    # Entries of Powell term for induction equation
+    f[1] = v1_plus_ll * B2_avg
+    f[2] = v2_plus_ll * B2_avg
+    f[3] = v3_plus_ll * B2_avg
 
     for k in eachcomponent(equations)
       # Compute term 2 (MHD)
-      f2 = charge_ratio_ll[k] * (- B2_rr * B1_rr) 
-      f3 = charge_ratio_ll[k] * (- B2_rr * B2_rr + 0.5 * mag_norm_rr + pe_rr)
-      f4 = charge_ratio_ll[k] * (- B2_rr * B3_rr)
-      f5 = vk2_plus_ll[k] * pe_rr
+      f2 = charge_ratio_ll[k] * (- 0.5 * B2_ll * B1_ll - 0.5 * B2_rr * B1_rr) 
+      f3 = charge_ratio_ll[k] * (- 0.5 * B2_ll * B2_ll - 0.5 * B2_rr * B2_rr + 0.5 * mag_norm_avg + pe_avg)
+      f4 = charge_ratio_ll[k] * (- 0.5 * B2_ll * B3_ll - 0.5 * B2_rr * B3_rr)
+      f5 = vk2_plus_ll[k] * pe_avg
 
       # Compute term 3 (only needed for NCOMP>1)
+      vk1_minus_ll = v1_plus_ll - vk1_plus_ll[k]
+      vk2_minus_ll = v2_plus_ll - vk2_plus_ll[k]
+      vk3_minus_ll = v3_plus_ll - vk3_plus_ll[k]
       vk1_minus_rr = v1_plus_rr - vk1_plus_rr[k]
       vk2_minus_rr = v2_plus_rr - vk2_plus_rr[k]
       vk3_minus_rr = v3_plus_rr - vk3_plus_rr[k]
-      f5 += (B1_ll * (vk2_minus_rr * B1_rr - vk1_minus_rr * B2_rr) + 
-             B3_ll * (vk2_minus_rr * B3_rr - vk3_minus_rr * B2_rr) )
+      f5 += (B1_ll * (0.5 * (vk2_minus_ll * B1_ll - vk1_minus_ll * B2_ll) + 0.5 * (vk2_minus_rr * B1_rr - vk1_minus_rr * B2_rr)) + 
+             B3_ll * (0.5 * (vk2_minus_ll * B3_ll - vk3_minus_ll * B2_ll) + 0.5 * (vk2_minus_rr * B3_rr - vk3_minus_rr * B2_rr)) )
 
-      # Compute Powell term (already consistent with Trixi's non-conservative discretization)
-      f2 += charge_ratio_ll[k] * B1_ll * B2_rr
-      f3 += charge_ratio_ll[k] * B2_ll * B2_rr
-      f4 += charge_ratio_ll[k] * B3_ll * B2_rr
-      f5 += (v1_plus_ll * B1_ll + v2_plus_ll * B2_ll + v3_plus_ll * B3_ll) * B2_rr
-
-      # It's not needed to adjust to Trixi's non-conservative form
+      # Compute Powell term
+      f2 += charge_ratio_ll[k] * B1_ll * B2_avg
+      f3 += charge_ratio_ll[k] * B2_ll * B2_avg
+      f4 += charge_ratio_ll[k] * B3_ll * B2_avg
+      f5 += (v1_plus_ll * B1_ll + v2_plus_ll * B2_ll + v3_plus_ll * B3_ll) * B2_avg
 
       # Append to the flux vector
       set_component!(f, k, 0, f2, f3, f4, f5, equations)
     end
   end
 
-  return SVector(f)
+  return SVector(2 * f)
 end
 
 """

@@ -5,7 +5,10 @@ using Trixi
 ###############################################################################
 # semidiscretization of the ideal MHD equations
 equations = IdealMhdMultiIonEquations2D(gammas = (1.4, 1.4),
-                                        charge_to_mass = (1.0, 2.0))
+                                        charge_to_mass = (1.0, 2.0),
+                                        gas_constants = (1.0, 1.0),
+                                        molar_masses = (1.0, 1.0),
+                                        collision_frequency = 1.0)
 
 """
     initial_condition_rotor(x, t, equations::IdealMhdMultiIonEquations2D)
@@ -104,7 +107,7 @@ mesh = TreeMesh(coordinates_min, coordinates_max,
 
 
 semi = SemidiscretizationHyperbolic(mesh, equations, initial_condition, solver,
-                                    source_terms=source_terms_collision)
+                                    source_terms=source_terms_collision_ion_ion)
 
 
 ###############################################################################
@@ -126,26 +129,11 @@ save_solution = SaveSolutionCallback(interval=1000,
 
 stepsize_callback = StepsizeCallback(cfl=0.5)
 
-amr_indicator = IndicatorLöhner(semi,
-                                variable=density)
-
-amr_controller = ControllerThreeLevelCombined(semi, amr_indicator,indicator_sc,
-                                      base_level=4,
-                                      med_level =5, med_threshold=0.02, # med_level = current level
-                                      max_level =7, max_threshold=0.04,
-                                      max_threshold_secondary=0.2)
-
-amr_callback = AMRCallback(semi, amr_controller,
-                           interval=6,
-                           adapt_initial_condition=true,
-                           adapt_initial_condition_only_refine=true)
-
 save_restart = SaveRestartCallback(interval=10000,
                            save_final_restart=true)
 
 callbacks = CallbackSet(summary_callback,
                         analysis_callback, alive_callback,
-			                  amr_callback,
                         save_solution,
                         save_restart,
                         stepsize_callback)
