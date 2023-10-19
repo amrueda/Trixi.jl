@@ -133,7 +133,6 @@ include("auxiliary/special_elixirs.jl")
 include("visualization/visualization.jl")
 
 # export types/functions that define the public API of Trixi.jl
-
 export AcousticPerturbationEquations2D,
        CompressibleEulerEquations1D, CompressibleEulerEquations2D,
        CompressibleEulerEquations3D,
@@ -219,7 +218,7 @@ export entropy, energy_total, energy_kinetic, energy_internal, energy_magnetic,
        enstrophy
 export lake_at_rest_error
 export ncomponents, eachcomponent
-export get_component
+export get_component, set_component!, magnetic_field, MVector
 
 export TreeMesh, StructuredMesh, UnstructuredMesh2D, P4estMesh, T8codeMesh
 
