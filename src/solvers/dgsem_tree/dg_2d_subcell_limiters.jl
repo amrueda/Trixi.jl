@@ -282,15 +282,19 @@ end
         u_rr = get_node_vars(u, equations, dg, i + 1, j, element)
         for noncons in 1:nnoncons(equations)
             for v in eachvariable(equations)
-                fhat_noncons_temp[v, noncons, i + 1, j] = fhat_noncons_temp[v, noncons, i,
+                fhat_noncons_temp[v, noncons, i + 1, j] = fhat_noncons_temp[v, noncons,
+                                                                            i,
                                                                             j] +
-                                                        weights[i] *
-                                                        flux_noncons_temp[v, noncons, i,
+                                                          weights[i] *
+                                                          flux_noncons_temp[v, noncons,
+                                                                            i,
                                                                             j]
             end
-            volume_flux_noncons(view(fhat1_L,:, i + 1, j), view(fhat_noncons_temp,:, noncons, i + 1, j), 
+            volume_flux_noncons(view(fhat1_L, :, i + 1, j),
+                                view(fhat_noncons_temp, :, noncons, i + 1, j),
                                 u_ll, 1, equations, NonConservativeLocal(), noncons)
-            volume_flux_noncons(view(fhat1_R,:, i + 1, j), view(fhat_noncons_temp,:, noncons, i + 1, j), 
+            volume_flux_noncons(view(fhat1_R, :, i + 1, j),
+                                view(fhat_noncons_temp, :, noncons, i + 1, j),
                                 u_rr, 1, equations, NonConservativeLocal(), noncons)
         end
     end
@@ -342,15 +346,19 @@ end
         u_rr = get_node_vars(u, equations, dg, i, j + 1, element)
         for noncons in 1:nnoncons(equations)
             for v in eachvariable(equations)
-                fhat_noncons_temp[v, noncons, i, j + 1] = fhat_noncons_temp[v, noncons, i,
+                fhat_noncons_temp[v, noncons, i, j + 1] = fhat_noncons_temp[v, noncons,
+                                                                            i,
                                                                             j] +
-                                                        weights[j] *
-                                                        flux_noncons_temp[v, noncons, i,
+                                                          weights[j] *
+                                                          flux_noncons_temp[v, noncons,
+                                                                            i,
                                                                             j]
             end
-            volume_flux_noncons(view(fhat2_L,:, i, j + 1), view(fhat_noncons_temp,:, noncons, i, j + 1), 
+            volume_flux_noncons(view(fhat2_L, :, i, j + 1),
+                                view(fhat_noncons_temp, :, noncons, i, j + 1),
                                 u_ll, 2, equations, NonConservativeLocal(), noncons)
-            volume_flux_noncons(view(fhat2_R,:, i, j + 1), view(fhat_noncons_temp,:, noncons, i, j + 1), 
+            volume_flux_noncons(view(fhat2_R, :, i, j + 1),
+                                view(fhat_noncons_temp, :, noncons, i, j + 1),
                                 u_rr, 2, equations, NonConservativeLocal(), noncons)
         end
     end
