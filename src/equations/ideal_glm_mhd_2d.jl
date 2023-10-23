@@ -290,8 +290,8 @@ Powell and the Galilean nonconservative term associated with the GLM multiplier
 of the [`IdealGlmMhdEquations2D`](@ref).
 
 This implementation uses a non-conservative term that can be written as the product
-of local and symmetric parts. It is equivalent to the non-conservative flux of Bohm 
-et al. (`flux_nonconservative_powell`) for conforming meshes but it yields different 
+of local and symmetric parts. It is equivalent to the non-conservative flux of Bohm
+et al. (`flux_nonconservative_powell`) for conforming meshes but it yields different
 results on non-conforming meshes(!).
 ## References
 - Rueda-Ramírez, Gassner (2023). A Flux-Differencing Formula for Split-Form Summation By Parts
@@ -338,11 +338,11 @@ results on non-conforming meshes(!).
 end
 """
     flux_nonconservative_powell2(u_ll, orientation::Integer,
-                                equations::IdealGlmMhdEquations2D, 
+                                equations::IdealGlmMhdEquations2D,
                                 nonconservative_type::NonConservativeLocal,
                                 noncons_term::Integer)
 
-Local part of the Powell and GLM non-conservative terms. Needed for the calculation of 
+Local part of the Powell and GLM non-conservative terms. Needed for the calculation of
 the non-conservative staggered "fluxes" for subcell limiting. See, e.g.,
 - Rueda-Ramírez, Gassner (2023). A Flux-Differencing Formula for Split-Form Summation By Parts
   Discretizations of Non-Conservative Systems. https://arxiv.org/pdf/2211.14009.pdf.
@@ -450,7 +450,7 @@ end
                                 nonconservative_type::NonConservativeSymmetric,
                                 noncons_term::Integer)
 
-Symmetric part of the Powell and GLM non-conservative terms. Needed for the calculation of 
+Symmetric part of the Powell and GLM non-conservative terms. Needed for the calculation of
 the non-conservative staggered "fluxes" for subcell limiting. See, e.g.,
 - Rueda-Ramírez, Gassner (2023). A Flux-Differencing Formula for Split-Form Summation By Parts
   Discretizations of Non-Conservative Systems. https://arxiv.org/pdf/2211.14009.pdf.
@@ -518,7 +518,8 @@ to f1, then multiplies it with factor2 and adds it to f2.
 Even though this routine modifies its arguments and returns nothing, we omit the exclamation mark
 in the end to make it compatible with the other non-conservative flux functions
 """
-@inline function flux_nonconservative_powell2(f1, f2, factor1, factor2, u_ll, u_rr, orientation::Integer,
+@inline function flux_nonconservative_powell2(f1, f2, factor1, factor2, u_ll, u_rr,
+                                              orientation::Integer,
                                               equations::IdealGlmMhdEquations2D,
                                               nonconservative_type::NonConservativeSymmetric,
                                               noncons_term::Integer)

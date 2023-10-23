@@ -77,11 +77,10 @@ end
     fhat1_R = fhat1_R_threaded[Threads.threadid()]
     fhat2_L = fhat2_L_threaded[Threads.threadid()]
     fhat2_R = fhat2_R_threaded[Threads.threadid()]
-    @trixi_timeit timer() "calcflux_fhat!" begin
-        calcflux_fhat!(fhat1_L, fhat1_R, fhat2_L, fhat2_R, u, mesh,
-                       nonconservative_terms, equations, volume_flux_dg, dg, element,
-                       cache)
-    end
+    calcflux_fhat!(fhat1_L, fhat1_R, fhat2_L, fhat2_R, u, mesh,
+                   nonconservative_terms, equations, volume_flux_dg, dg, element,
+                   cache)
+
     # low-order FV fluxes
     @unpack fstar1_L_threaded, fstar1_R_threaded, fstar2_L_threaded, fstar2_R_threaded = cache
 
@@ -89,19 +88,15 @@ end
     fstar2_L = fstar2_L_threaded[Threads.threadid()]
     fstar1_R = fstar1_R_threaded[Threads.threadid()]
     fstar2_R = fstar2_R_threaded[Threads.threadid()]
-    @trixi_timeit timer() "calcflux_fv!" begin
-        calcflux_fv!(fstar1_L, fstar1_R, fstar2_L, fstar2_R, u, mesh,
-                     nonconservative_terms, equations, volume_flux_fv, dg, element,
-                     cache)
-    end
+    calcflux_fv!(fstar1_L, fstar1_R, fstar2_L, fstar2_R, u, mesh,
+                 nonconservative_terms, equations, volume_flux_fv, dg, element,
+                 cache)
 
     # antidiffusive flux
-    @trixi_timeit timer() "calcflux_antidiffusive!" begin
-        calcflux_antidiffusive!(fhat1_L, fhat1_R, fhat2_L, fhat2_R,
-                                fstar1_L, fstar1_R, fstar2_L, fstar2_R,
-                                u, mesh, nonconservative_terms, equations, limiter, dg,
-                                element, cache)
-    end
+    calcflux_antidiffusive!(fhat1_L, fhat1_R, fhat2_L, fhat2_R,
+                            fstar1_L, fstar1_R, fstar2_L, fstar2_R,
+                            u, mesh, nonconservative_terms, equations, limiter, dg,
+                            element, cache)
 
     # Calculate volume integral contribution of low-order FV flux
     for j in eachnode(dg), i in eachnode(dg)
@@ -207,7 +202,7 @@ end
 #
 # - Rueda-Ramírez, Gassner (2023). A Flux-Differencing Formula for Split-Form Summation By Parts
 #   Discretizations of Non-Conservative Systems. https://arxiv.org/pdf/2211.14009.pdf.
-# 
+#
 @inline function calcflux_fhat!(fhat1_L, fhat1_R, fhat2_L, fhat2_R, u,
                                 mesh::TreeMesh{2}, nonconservative_terms::True,
                                 equations,
@@ -275,10 +270,10 @@ end
     for j in eachnode(dg), i in 1:(nnodes(dg) - 1)
         # Conservative part
         for v in eachvariable(equations)
-            fhat_temp[v, i + 1, j] = fhat_temp[v, i, j] +
-                                     weights[i] * flux_temp[v, i, j]
-            fhat1_L[v, i + 1, j] = fhat_temp[v, i + 1, j]
-            fhat1_R[v, i + 1, j] = fhat_temp[v, i + 1, j]
+            value = fhat_temp[v, i, j] + weights[i] * flux_temp[v, i, j]
+            fhat_temp[v, i + 1, j] = value
+            fhat1_L[v, i + 1, j] = value
+            fhat1_R[v, i + 1, j] = value
         end
         # Nonconservative part
         u_ll = get_node_vars(u, equations, dg, i, j, element)
@@ -335,10 +330,10 @@ end
     for j in 1:(nnodes(dg) - 1), i in eachnode(dg)
         # Conservative part
         for v in eachvariable(equations)
-            fhat_temp[v, i, j + 1] = fhat_temp[v, i, j] +
-                                     weights[j] * flux_temp[v, i, j]
-            fhat2_L[v, i, j + 1] = fhat_temp[v, i, j + 1]
-            fhat2_R[v, i, j + 1] = fhat_temp[v, i, j + 1]
+            value = fhat_temp[v, i, j] + weights[j] * flux_temp[v, i, j]
+            fhat_temp[v, i, j + 1] = value
+            fhat2_L[v, i, j + 1] = value
+            fhat2_R[v, i, j + 1] = value
         end
         # Nonconservative part
         u_ll = get_node_vars(u, equations, dg, i, j, element)
