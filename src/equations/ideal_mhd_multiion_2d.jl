@@ -10,34 +10,39 @@
 
 The ideal compressible multi-ion MHD equations in two space dimensions.
 """
-mutable struct IdealMhdMultiIonEquations2D{NVARS, NCOMP, RealT<:Real, ElectronPressure} <: AbstractIdealMhdMultiIonEquations{2, NVARS, NCOMP}
+mutable struct IdealMhdMultiIonEquations2D{NVARS, NCOMP, RealT<:Real, ElectronPressure, ElectronTemperature} <: AbstractIdealMhdMultiIonEquations{2, NVARS, NCOMP}
   gammas            ::SVector{NCOMP, RealT} # Heat capacity ratios
   charge_to_mass    ::SVector{NCOMP, RealT} # Charge to mass ratios
   gas_constants     ::SVector{NCOMP, RealT} # Specific gas constants
   molar_masses      ::SVector{NCOMP, RealT} # Molar masses (can be provided in any units as they are only used to compute ratios)
   collision_frequency ::RealT               # Single collision frequency scaled with molecular mass of ion 1 (TODO: Replace by matrix of collision frequencies)
+  ion_electron_collision_constants::SVector{NCOMP, RealT} # Constants for the ion-electron collision frequencies. The collision frequency is obtained as constant * (e * n_e) / T_e^1.5
   electron_pressure::ElectronPressure       # Function to compute the electron pressure
+  electron_temperature::ElectronTemperature # Function to compute the electron temperature
 
-  function IdealMhdMultiIonEquations2D{NVARS, NCOMP, RealT, ElectronPressure}(
+  function IdealMhdMultiIonEquations2D{NVARS, NCOMP, RealT, ElectronPressure, ElectronTemperature}(
                                         gammas::SVector{NCOMP, RealT},
                                         charge_to_mass::SVector{NCOMP, RealT},
                                         gas_constants::SVector{NCOMP, RealT},
                                         molar_masses::SVector{NCOMP, RealT},
                                         collision_frequency::RealT,
-                                        electron_pressure::ElectronPressure) where {NVARS, NCOMP, RealT<:Real, ElectronPressure}
+                                        ion_electron_collision_constants::SVector{NCOMP, RealT},
+                                        electron_pressure::ElectronPressure,
+                                        electron_temperature::ElectronTemperature) where {NVARS, NCOMP, RealT<:Real, ElectronPressure, ElectronTemperature}
 
     NCOMP >= 1 || throw(DimensionMismatch("`gammas` and `charge_to_mass` have to be filled with at least one value"))
 
-    new(gammas, charge_to_mass, gas_constants, molar_masses, collision_frequency, electron_pressure)
+    new(gammas, charge_to_mass, gas_constants, molar_masses, collision_frequency, ion_electron_collision_constants, electron_pressure, electron_temperature)
   end
 end
 
-function IdealMhdMultiIonEquations2D(; gammas, charge_to_mass, gas_constants, molar_masses, collision_frequency, electron_pressure = electron_pressure_zero)
+function IdealMhdMultiIonEquations2D(; gammas, charge_to_mass, gas_constants, molar_masses, collision_frequency, ion_electron_collision_constants, electron_pressure = electron_pressure_zero, electron_temperature = electron_pressure_zero)
   _gammas         = promote(gammas...)
   _charge_to_mass = promote(charge_to_mass...)
   _gas_constants  = promote(gas_constants...)
   _molar_masses   = promote(molar_masses...)
-  RealT           = promote_type(eltype(_gammas), eltype(_charge_to_mass), eltype(_gas_constants), eltype(_molar_masses), eltype(collision_frequency))
+  _ion_electron_collision_constants = promote(ion_electron_collision_constants...)
+  RealT           = promote_type(eltype(_gammas), eltype(_charge_to_mass), eltype(_gas_constants), eltype(_molar_masses), eltype(collision_frequency), eltype(_ion_electron_collision_constants))
 
   NVARS = length(_gammas) * 5 + 3
   NCOMP = length(_gammas)
@@ -47,8 +52,9 @@ function IdealMhdMultiIonEquations2D(; gammas, charge_to_mass, gas_constants, mo
   __gas_constants  = SVector(map(RealT, _gas_constants))
   __molar_masses   = SVector(map(RealT, _molar_masses))
   __collision_frequency = map(RealT, collision_frequency)
+  __ion_electron_collision_constants = SVector(map(RealT, _ion_electron_collision_constants))
 
-  return IdealMhdMultiIonEquations2D{NVARS, NCOMP, RealT, typeof(electron_pressure)}(__gammas, __charge_to_mass, __gas_constants, __molar_masses, __collision_frequency, electron_pressure)
+  return IdealMhdMultiIonEquations2D{NVARS, NCOMP, RealT, typeof(electron_pressure), typeof(electron_temperature)}(__gammas, __charge_to_mass, __gas_constants, __molar_masses, __collision_frequency, __ion_electron_collision_constants, electron_pressure, electron_temperature)
 end
 
 @inline Base.real(::IdealMhdMultiIonEquations2D{NVARS, NCOMP, RealT}) where {NVARS, NCOMP, RealT} = RealT
@@ -147,7 +153,7 @@ end
 @inline function flux(u, orientation::Integer, equations::IdealMhdMultiIonEquations2D)
   B1, B2, B3 = magnetic_field(u, equations)
   
-  v1_plus, v2_plus, v3_plus, vk1_plus, vk2_plus, vk3_plus = charge_averaged_velocities(u, equations)
+  v1_plus, v2_plus, v3_plus, vk1_plus, vk2_plus, vk3_plus, total_electron_charge = charge_averaged_velocities(u, equations)
 
   mag_en = 0.5 * (B1^2 + B2^2 + B3^2)
 
@@ -212,7 +218,7 @@ Standard source terms of the multi-ion MHD equations
 function source_terms_standard(u, x, t, equations::IdealMhdMultiIonEquations2D)
   @unpack charge_to_mass = equations
   B1, B2, B3 = magnetic_field(u, equations)
-  v1_plus, v2_plus, v3_plus, vk1_plus, vk2_plus, vk3_plus = charge_averaged_velocities(u, equations)
+  v1_plus, v2_plus, v3_plus, vk1_plus, vk2_plus, vk3_plus, total_electron_charge = charge_averaged_velocities(u, equations)
 
   s = zero(MVector{nvariables(equations), eltype(u)})
 
@@ -256,6 +262,9 @@ function source_terms_collision_ion_ion(u, x, t, equations::IdealMhdMultiIonEqua
     S_q3 = 0.0
     S_E  = 0.0
     for l in eachcomponent(equations)
+      # Skip computation for same species
+      l == k && continue
+
       rho_l, v1_l, v2_l, v3_l, p_l = get_component(l, prim, equations)
       T_l = p_l / (rho_l * gas_constants[l])
 
@@ -287,6 +296,41 @@ function source_terms_collision_ion_ion(u, x, t, equations::IdealMhdMultiIonEqua
     set_component!(s, k, 0.0, S_q1, S_q2, S_q3, S_E, equations)
   end
   return SVector{nvariables(equations), real(equations)}(S_std .+ s)
+end
+
+"""
+Ion-electron collision source terms, cf. Rueda-Ramirez et al. (2023) and Rubin et al. (2015)
+Here we assume v_e = v⁺ (no effect of currents on the electron velocity)
+"""
+function source_terms_collision_ion_electron(u, x, t, equations::IdealMhdMultiIonEquations2D)        
+
+  s = zero(MVector{nvariables(equations), eltype(u)})
+  @unpack gammas, gas_constants, molar_masses, ion_electron_collision_constants, electron_temperature = equations
+  
+  prim = cons2prim(u, equations)
+  T_e = electron_temperature(u, equations)
+  T_e32 = T_e^(3/2)
+
+  v1_plus, v2_plus, v3_plus, vk1_plus, vk2_plus, vk3_plus, total_electron_charge = charge_averaged_velocities(u, equations)
+
+  for k in eachcomponent(equations)
+    rho_k, v1_k, v2_k, v3_k, p_k = get_component(k, prim, equations)
+    T_k = p_k / (rho_k * gas_constants[k])
+
+    # Compute effective collision frequency
+    v_ke = ion_electron_collision_constants[k] * total_electron_charge / T_e32
+
+    S_q1 = rho_k * v_ke * (v1_plus - v1_k)
+    S_q2 = rho_k * v_ke * (v2_plus - v2_k)
+    S_q3 = rho_k * v_ke * (v3_plus - v3_k)
+
+    S_E  = 3 * molar_masses[1] * gas_constants[1] * (T_e - T_k) * v_ke * rho_k / molar_masses[k]
+
+    S_E += (v1_k * S_q1 + v2_k * S_q2 + v3_k * S_q3)
+    
+    set_component!(s, k, 0.0, S_q1, S_q2, S_q3, S_E, equations)
+  end
+  return SVector{nvariables(equations), real(equations)}(s)
 end
   
 function electron_pressure_zero(u, equations::IdealMhdMultiIonEquations2D)
@@ -331,8 +375,8 @@ The flux is composed of three terms that can be written as the product of local 
   charge_ratio_ll ./= total_electron_charge
 
   # Compute auxiliary variables
-  v1_plus_ll, v2_plus_ll, v3_plus_ll, vk1_plus_ll, vk2_plus_ll, vk3_plus_ll = charge_averaged_velocities(u_ll, equations)
-  v1_plus_rr, v2_plus_rr, v3_plus_rr, vk1_plus_rr, vk2_plus_rr, vk3_plus_rr = charge_averaged_velocities(u_rr, equations)
+  v1_plus_ll, v2_plus_ll, v3_plus_ll, vk1_plus_ll, vk2_plus_ll, vk3_plus_ll, _ = charge_averaged_velocities(u_ll, equations)
+  v1_plus_rr, v2_plus_rr, v3_plus_rr, vk1_plus_rr, vk2_plus_rr, vk3_plus_rr, _ = charge_averaged_velocities(u_rr, equations)
 
   f = zero(MVector{nvariables(equations), eltype(u_ll)})
   
@@ -755,8 +799,8 @@ The term is composed of three parts
   charge_ratio_ll ./= total_electron_charge
 
   # Compute auxiliary variables
-  v1_plus_ll, v2_plus_ll, v3_plus_ll, vk1_plus_ll, vk2_plus_ll, vk3_plus_ll = charge_averaged_velocities(u_ll, equations)
-  v1_plus_rr, v2_plus_rr, v3_plus_rr, vk1_plus_rr, vk2_plus_rr, vk3_plus_rr = charge_averaged_velocities(u_rr, equations)
+  v1_plus_ll, v2_plus_ll, v3_plus_ll, vk1_plus_ll, vk2_plus_ll, vk3_plus_ll, _ = charge_averaged_velocities(u_ll, equations)
+  v1_plus_rr, v2_plus_rr, v3_plus_rr, vk1_plus_rr, vk2_plus_rr, vk3_plus_rr, _ = charge_averaged_velocities(u_rr, equations)
 
   f = zero(MVector{nvariables(equations), eltype(u_ll)})
   
@@ -847,8 +891,8 @@ function flux_ruedaramirez_etal(u_ll, u_rr, orientation::Integer, equations::Ide
   B1_ll, B2_ll, B3_ll = magnetic_field(u_ll, equations)
   B1_rr, B2_rr, B3_rr = magnetic_field(u_rr, equations)
   
-  v1_plus_ll, v2_plus_ll, v3_plus_ll, vk1_plus_ll, vk2_plus_ll, vk3_plus_ll = charge_averaged_velocities(u_ll, equations)
-  v1_plus_rr, v2_plus_rr, v3_plus_rr, vk1_plus_rr, vk2_plus_rr, vk3_plus_rr = charge_averaged_velocities(u_rr, equations)
+  v1_plus_ll, v2_plus_ll, v3_plus_ll, vk1_plus_ll, vk2_plus_ll, vk3_plus_ll, _ = charge_averaged_velocities(u_ll, equations)
+  v1_plus_rr, v2_plus_rr, v3_plus_rr, vk1_plus_rr, vk2_plus_rr, vk3_plus_rr, _ = charge_averaged_velocities(u_rr, equations)
 
   f = zero(MVector{nvariables(equations), eltype(u_ll)})
 
@@ -1231,7 +1275,7 @@ Routine to compute the Charge-averaged velocities:
   v2_plus = sum(vk2_plus)
   v3_plus = sum(vk3_plus)
 
-  return v1_plus, v2_plus, v3_plus, SVector(vk1_plus), SVector(vk2_plus), SVector(vk3_plus)
+  return v1_plus, v2_plus, v3_plus, SVector(vk1_plus), SVector(vk2_plus), SVector(vk3_plus), total_electron_charge
 end
 
 """

@@ -8,7 +8,8 @@ equations = IdealMhdMultiIonEquations2D(gammas = (2.0, 2.0),
                                         charge_to_mass = (1.0, 1.0),
 					gas_constants = (1.0, 1.0),
 					molar_masses = (1.0, 1.0),
-					collision_frequency = 1.0)
+					collision_frequency = 1.0,
+                                        ion_electron_collision_constants=(1.0, 1.0))
 
 initial_condition = initial_condition_weak_blast_wave
 
