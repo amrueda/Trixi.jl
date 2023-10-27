@@ -199,7 +199,8 @@ export boundary_condition_do_nothing,
        BoundaryConditionNavierStokesWall, NoSlip, Adiabatic, Isothermal,
        BoundaryConditionCoupled
 
-export initial_condition_convergence_test, source_terms_convergence_test, source_terms_standard
+export initial_condition_convergence_test, source_terms_convergence_test, source_terms_standard,
+       source_terms_collision_ion_electron
 export source_terms_harmonic
 export initial_condition_poisson_nonperiodic, source_terms_poisson_nonperiodic,
        boundary_condition_poisson_nonperiodic
