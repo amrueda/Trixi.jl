@@ -331,6 +331,60 @@ function source_terms_collision_ion_electron(u, x, t, equations::IdealMhdMultiIo
   end
   return SVector{nvariables(equations), real(equations)}(s)
 end
+
+"""
+Ion-electron collision source terms, including the effect on Ohm's law, cf. Rueda-Ramirez et al. (2023) and Rubin et al. (2015)
+Here we assume v_e = v⁺ (no effect of currents on the electron velocity)
+"""
+function source_terms_collision_ion_electron_ohm(u, x, t, equations::IdealMhdMultiIonEquations2D)        
+
+  s = zero(MVector{nvariables(equations), eltype(u)})
+  @unpack gammas, gas_constants, charge_to_mass, molar_masses, ion_electron_collision_constants, electron_temperature = equations
+  
+  prim = cons2prim(u, equations)
+  T_e = electron_temperature(u, equations)
+  T_e32 = T_e^(3/2)
+
+  v1_plus, v2_plus, v3_plus, vk1_plus, vk2_plus, vk3_plus, total_electron_charge = charge_averaged_velocities(u, equations)
+
+  Se_q1 = 0.0
+  Se_q2 = 0.0
+  Se_q3 = 0.0
+
+  for k in eachcomponent(equations)
+    rho_k, v1_k, v2_k, v3_k, p_k = get_component(k, prim, equations)
+    T_k = p_k / (rho_k * gas_constants[k])
+
+    # Compute effective collision frequency
+    v_ke = ion_electron_collision_constants[k] * total_electron_charge / T_e32
+
+    S_q1 = rho_k * v_ke * (v1_plus - v1_k)
+    S_q2 = rho_k * v_ke * (v2_plus - v2_k)
+    S_q3 = rho_k * v_ke * (v3_plus - v3_k)
+    Se_q1 -= S_q1
+    Se_q2 -= S_q2
+    Se_q3 -= S_q3
+
+    S_E  = 3 * molar_masses[1] * gas_constants[1] * (T_e - T_k) * v_ke * rho_k / molar_masses[k]
+
+    S_E += (v1_k * S_q1 + v2_k * S_q2 + v3_k * S_q3)
+    
+    set_component!(s, k, 0.0, S_q1, S_q2, S_q3, S_E, equations)
+  end
+
+  s_ohm = zero(MVector{nvariables(equations), eltype(u)})
+  for k in eachcomponent(equations)
+    rho_k, _, _, _, _ = get_component(k, prim, equations)
+
+    S_q1 = rho_k * charge_to_mass[k] * Se_q1 / total_electron_charge
+    S_q2 = rho_k * charge_to_mass[k] * Se_q2 / total_electron_charge
+    S_q3 = rho_k * charge_to_mass[k] * Se_q3 / total_electron_charge
+
+    set_component!(s_ohm, k, 0.0, S_q1, S_q2, S_q3, 0.0, equations)
+  end
+
+  return SVector{nvariables(equations), real(equations)}(s + s_ohm)
+end
   
 function electron_pressure_zero(u, equations::IdealMhdMultiIonEquations2D)
   return zero(u[1])
