@@ -497,33 +497,53 @@ end
     return cons
 end
 
+"""
+    initial_condition_double_mach_reflection(x, t, equations::CompressibleEulerEquations2D)
+
+Compressible Euler setup for a double Mach reflection problem.
+Involves strong shock interactions as well as steady / unsteady flow structures.
+Also exercises special boundary conditions along the bottom of the domain that is a mixture of
+Dirichlet and slip wall.
+See Section IV c on the paper below for details.
+
+- Paul Woodward and Phillip Colella (1984)
+  The Numerical Simulation of Two-Dimensional Fluid Flows with Strong Shocks.
+  [DOI: 10.1016/0021-9991(84)90142-6](https://doi.org/10.1016/0021-9991(84)90142-6)
+"""
 @inline function initial_condition_double_mach_reflection(x, t,
                                                           equations::CompressibleEulerEquations2D)
     if x[1] < 1 / 6 + (x[2] + 20 * t) / sqrt(3)
         phi = pi / 6
         sin_phi, cos_phi = sincos(phi)
 
-        rho = 8
+        rho = 8.0
         v1 = 8.25 * cos_phi
         v2 = -8.25 * sin_phi
         p = 116.5
     else
         rho = 1.4
-        v1 = 0
-        v2 = 0
-        p = 1
+        v1 = 0.0
+        v2 = 0.0
+        p = 1.0
     end
 
     prim = SVector(rho, v1, v2, p)
     return prim2cons(prim, equations)
 end
 
+# Special mixed boundary condition type for the :Bottom of the domain.
+# It is charachteristic when x < 1/6 and a slip wall when x >= 1/6
 @inline function boundary_condition_mixed_dirichlet_wall(u_inner,
                                                          normal_direction::AbstractVector,
                                                          direction,
                                                          x, t, surface_flux_function,
                                                          equations::CompressibleEulerEquations2D)
+    # Note: Only for StructuredMesh
     if x[1] < 1 / 6
+        # # From the BoundaryConditionDirichlet
+        # # get the external value of the solution
+        # u_boundary = initial_condition_double_mach_reflection(x, t, equations)
+
         # From the BoundaryConditionCharacteristic
         # get the external state of the solution
         u_boundary = Trixi.characteristic_boundary_value_function(initial_condition_double_mach_reflection,
@@ -1420,7 +1440,7 @@ function flux_hllc(u_ll, u_rr, orientation::Integer,
 end
 
 """
-    flux_hlle(u_ll, u_rr, orientation, equations::CompressibleEulerEquations2D)
+    min_max_speed_einfeldt(u_ll, u_rr, orientation, equations::CompressibleEulerEquations2D)
 
 Computes the HLLE (Harten-Lax-van Leer-Einfeldt) flux for the compressible Euler equations.
 Special estimates of the signal velocites and linearization of the Riemann problem developed
@@ -1434,8 +1454,8 @@ of the numerical flux.
   On Godunov-type methods near low densities.
   [DOI: 10.1016/0021-9991(91)90211-3](https://doi.org/10.1016/0021-9991(91)90211-3)
 """
-function flux_hlle(u_ll, u_rr, orientation::Integer,
-                   equations::CompressibleEulerEquations2D)
+@inline function min_max_speed_einfeldt(u_ll, u_rr, orientation::Integer,
+                                        equations::CompressibleEulerEquations2D)
     # Calculate primitive variables, enthalpy and speed of sound
     rho_ll, v1_ll, v2_ll, p_ll = cons2prim(u_ll, equations)
     rho_rr, v1_rr, v2_rr, p_rr = cons2prim(u_rr, equations)
@@ -1473,39 +1493,65 @@ function flux_hlle(u_ll, u_rr, orientation::Integer,
         SsR = max(v2_roe + c_roe, v2_rr + beta * c_rr, zero(v2_roe))
     end
 
-    if SsL >= 0.0 && SsR > 0.0
-        # Positive supersonic speed
-        f_ll = flux(u_ll, orientation, equations)
+    return SsL, SsR
+end
 
-        f1 = f_ll[1]
-        f2 = f_ll[2]
-        f3 = f_ll[3]
-        f4 = f_ll[4]
-    elseif SsR <= 0.0 && SsL < 0.0
-        # Negative supersonic speed
-        f_rr = flux(u_rr, orientation, equations)
+"""
+    min_max_speed_einfeldt(u_ll, u_rr, normal_direction, equations::CompressibleEulerEquations2D)
 
-        f1 = f_rr[1]
-        f2 = f_rr[2]
-        f3 = f_rr[3]
-        f4 = f_rr[4]
-    else
-        # Subsonic case
-        # Compute left and right fluxes
-        f_ll = flux(u_ll, orientation, equations)
-        f_rr = flux(u_rr, orientation, equations)
+Computes the HLLE (Harten-Lax-van Leer-Einfeldt) flux for the compressible Euler equations.
+Special estimates of the signal velocites and linearization of the Riemann problem developed
+by Einfeldt to ensure that the internal energy and density remain positive during the computation
+of the numerical flux.
 
-        f1 = (SsR * f_ll[1] - SsL * f_rr[1] + SsL * SsR * (u_rr[1] - u_ll[1])) /
-             (SsR - SsL)
-        f2 = (SsR * f_ll[2] - SsL * f_rr[2] + SsL * SsR * (u_rr[2] - u_ll[2])) /
-             (SsR - SsL)
-        f3 = (SsR * f_ll[3] - SsL * f_rr[3] + SsL * SsR * (u_rr[3] - u_ll[3])) /
-             (SsR - SsL)
-        f4 = (SsR * f_ll[4] - SsL * f_rr[4] + SsL * SsR * (u_rr[4] - u_ll[4])) /
-             (SsR - SsL)
-    end
+- Bernd Einfeldt (1988)
+  On Godunov-type methods for gas dynamics.
+  [DOI: 10.1137/0725021](https://doi.org/10.1137/0725021)
+- Bernd Einfeldt, Claus-Dieter Munz, Philip L. Roe and Björn Sjögreen (1991)
+  On Godunov-type methods near low densities.
+  [DOI: 10.1016/0021-9991(91)90211-3](https://doi.org/10.1016/0021-9991(91)90211-3)
+"""
+@inline function min_max_speed_einfeldt(u_ll, u_rr, normal_direction::AbstractVector,
+                                        equations::CompressibleEulerEquations2D)
+    # Calculate primitive variables, enthalpy and speed of sound
+    rho_ll, v1_ll, v2_ll, p_ll = cons2prim(u_ll, equations)
+    rho_rr, v1_rr, v2_rr, p_rr = cons2prim(u_rr, equations)
 
-    return SVector(f1, f2, f3, f4)
+    v_dot_n_ll = v1_ll * normal_direction[1] + v2_ll * normal_direction[2]
+    v_dot_n_rr = v1_rr * normal_direction[1] + v2_rr * normal_direction[2]
+
+    norm_ = norm(normal_direction)
+
+    # `u_ll[4]` is total energy `rho_e_ll` on the left
+    H_ll = (u_ll[4] + p_ll) / rho_ll
+    c_ll = sqrt(equations.gamma * p_ll / rho_ll) * norm_
+
+    # `u_rr[4]` is total energy `rho_e_rr` on the right
+    H_rr = (u_rr[4] + p_rr) / rho_rr
+    c_rr = sqrt(equations.gamma * p_rr / rho_rr) * norm_
+
+    # Compute Roe averages
+    sqrt_rho_ll = sqrt(rho_ll)
+    sqrt_rho_rr = sqrt(rho_rr)
+    inv_sum_sqrt_rho = inv(sqrt_rho_ll + sqrt_rho_rr)
+
+    v1_roe = (sqrt_rho_ll * v1_ll + sqrt_rho_rr * v1_rr) * inv_sum_sqrt_rho
+    v2_roe = (sqrt_rho_ll * v2_ll + sqrt_rho_rr * v2_rr) * inv_sum_sqrt_rho
+    v_roe = v1_roe * normal_direction[1] + v2_roe * normal_direction[2]
+    v_roe_mag = (v1_roe * normal_direction[1])^2 + (v2_roe * normal_direction[2])^2
+
+    H_roe = (sqrt_rho_ll * H_ll + sqrt_rho_rr * H_rr) * inv_sum_sqrt_rho
+    c_roe = sqrt((equations.gamma - 1) * (H_roe - 0.5 * v_roe_mag)) * norm_
+
+    # Compute convenience constant for positivity preservation, see
+    # https://doi.org/10.1016/0021-9991(91)90211-3
+    beta = sqrt(0.5 * (equations.gamma - 1) / equations.gamma)
+
+    # Estimate the edges of the Riemann fan (with positivity conservation)
+    SsL = min(v_roe - c_roe, v_dot_n_ll - beta * c_ll, zero(v_roe))
+    SsR = max(v_roe + c_roe, v_dot_n_rr + beta * c_rr, zero(v_roe))
+
+    return SsL, SsR
 end
 
 @inline function max_abs_speeds(u, equations::CompressibleEulerEquations2D)
