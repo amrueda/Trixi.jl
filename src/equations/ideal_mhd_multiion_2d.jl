@@ -23,34 +23,23 @@ mutable struct IdealMhdMultiIonEquations2D{NVARS, NCOMP, RealT <: Real,
     electron_temperature::ElectronTemperature # Function to compute the electron temperature
 
     function IdealMhdMultiIonEquations2D{NVARS, NCOMP, RealT, ElectronPressure,
-                                         ElectronTemperature}(gammas::SVector{NCOMP,
-                                                                              RealT},
-                                                              charge_to_mass::SVector{
-                                                                                      NCOMP,
-                                                                                      RealT
-                                                                                      },
-                                                              gas_constants::SVector{
-                                                                                     NCOMP,
-                                                                                     RealT
-                                                                                     },
-                                                              molar_masses::SVector{
-                                                                                    NCOMP,
-                                                                                    RealT
-                                                                                    },
-                                                              collision_frequency::RealT,
-                                                              ion_electron_collision_constants::SVector{
-                                                                                                        NCOMP,
-                                                                                                        RealT
-                                                                                                        },
-                                                              electron_pressure::ElectronPressure,
-                                                              electron_temperature::ElectronTemperature) where {
-                                                                                                                NVARS,
-                                                                                                                NCOMP,
-                                                                                                                RealT <:
-                                                                                                                Real,
-                                                                                                                ElectronPressure,
-                                                                                                                ElectronTemperature
-                                                                                                                }
+                                         ElectronTemperature}(gammas
+                                                              ::SVector{NCOMP, RealT},
+                                                              charge_to_mass
+                                                              ::SVector{NCOMP, RealT},
+                                                              gas_constants
+                                                              ::SVector{NCOMP, RealT},
+                                                              molar_masses
+                                                              ::SVector{NCOMP, RealT},
+                                                              collision_frequency
+                                                              ::RealT,
+                                                              ion_electron_collision_constants
+                                                              ::SVector{NCOMP, RealT},
+                                                              electron_pressure
+                                                              ::ElectronPressure,
+                                                              electron_temperature
+                                                              ::ElectronTemperature) where
+        {NVARS, NCOMP, RealT <: Real, ElectronPressure, ElectronTemperature}
         NCOMP >= 1 ||
             throw(DimensionMismatch("`gammas` and `charge_to_mass` have to be filled with at least one value"))
 

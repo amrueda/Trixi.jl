@@ -15,17 +15,10 @@ mutable struct IdealMhdMultiIonEquations1D{NVARS, NCOMP, RealT <: Real} <:
     gammas         :: SVector{NCOMP, RealT} # Heat capacity ratios
     charge_to_mass :: SVector{NCOMP, RealT} # Charge to mass ratios
 
-    function IdealMhdMultiIonEquations1D{NVARS, NCOMP, RealT}(gammas::SVector{NCOMP,
-                                                                              RealT},
-                                                              charge_to_mass::SVector{
-                                                                                      NCOMP,
-                                                                                      RealT
-                                                                                      }) where {
-                                                                                                NVARS,
-                                                                                                NCOMP,
-                                                                                                RealT <:
-                                                                                                Real
-                                                                                                }
+    function IdealMhdMultiIonEquations1D{NVARS, NCOMP,
+                                         RealT}(gammas::SVector{NCOMP, RealT},
+                                                charge_to_mass::SVector{NCOMP, RealT}) where
+        {NVARS, NCOMP, RealT <: Real}
         NCOMP >= 1 ||
             throw(DimensionMismatch("`gammas` and `charge_to_mass` have to be filled with at least one value"))
 
