@@ -208,6 +208,24 @@ struct BoundaryConditionNeumann{B}
     boundary_normal_flux_function::B
 end
 
+"""
+    NonConservativeLocal()
+
+Struct used for multiple dispatch on non-conservative flux functions in the format of "local * symmetric". 
+When the argument `nonconservative_type` is of type `NonConservativeLocal`, 
+the function returns the local part of the non-conservative term.
+"""
+struct NonConservativeLocal end
+
+"""
+    NonConservativeSymmetric()
+
+Struct used for multiple dispatch on non-conservative flux functions in the format of "local * symmetric". 
+When the argument `nonconservative_type` is of type `NonConservativeSymmetric`, 
+the function returns the symmetric part of the non-conservative term.
+"""
+struct NonConservativeSymmetric end
+
 # set sensible default values that may be overwritten by specific equations
 """
     have_nonconservative_terms(equations)
@@ -220,6 +238,14 @@ example of equations with nonconservative terms.
 The return value will be `True()` or `False()` to allow dispatching on the return type.
 """
 have_nonconservative_terms(::AbstractEquations) = False()
+"""
+    n_nonconservative_terms(equations)
+
+Number of nonconservative terms in the form local * symmetric for a particular equation.
+This function needs to be specialized only if equations with nonconservative terms are
+combined with certain solvers (e.g., subcell limiting).
+"""
+function n_nonconservative_terms end
 have_constant_speed(::AbstractEquations) = False()
 
 default_analysis_errors(::AbstractEquations) = (:l2_error, :linf_error)
@@ -371,6 +397,11 @@ abstract type AbstractCompressibleEulerMulticomponentEquations{NDIMS, NVARS, NCO
 include("compressible_euler_multicomponent_1d.jl")
 include("compressible_euler_multicomponent_2d.jl")
 
+# PolytropicEulerEquations
+abstract type AbstractPolytropicEulerEquations{NDIMS, NVARS} <:
+              AbstractEquations{NDIMS, NVARS} end
+include("polytropic_euler_2d.jl")
+
 # Retrieve number of components from equation instance for the multicomponent case
 @inline function ncomponents(::AbstractCompressibleEulerMulticomponentEquations{NDIMS,
                                                                                 NVARS,
@@ -406,7 +437,8 @@ include("ideal_glm_mhd_multicomponent_1d.jl")
 include("ideal_glm_mhd_multicomponent_2d.jl")
 
 # IdealMhdMultiIonEquations
-abstract type AbstractIdealMhdMultiIonEquations{NDIMS, NVARS, NCOMP} <: AbstractEquations{NDIMS, NVARS} end
+abstract type AbstractIdealMhdMultiIonEquations{NDIMS, NVARS, NCOMP} <:
+              AbstractEquations{NDIMS, NVARS} end
 include("ideal_mhd_multiion_1d.jl")
 include("ideal_mhd_multiion_2d.jl")
 
@@ -431,7 +463,13 @@ In particular, not the components themselves are returned.
 end
 
 # Retrieve number of components from equation instance for the multi-ion case
-@inline ncomponents(::AbstractIdealMhdMultiIonEquations{NDIMS, NVARS, NCOMP}) where {NDIMS, NVARS, NCOMP} = NCOMP
+@inline function ncomponents(::AbstractIdealMhdMultiIonEquations{NDIMS, NVARS, NCOMP}) where {
+                                                                                              NDIMS,
+                                                                                              NVARS,
+                                                                                              NCOMP
+                                                                                              }
+    NCOMP
+end
 
 """
     eachcomponent(equations::AbstractIdealMhdMultiIonEquations)
@@ -440,7 +478,9 @@ Return an iterator over the indices that specify the location in relevant data s
 for the components in `AbstractIdealMhdMultiIonEquations`. 
 In particular, not the components themselves are returned.
 """
-@inline eachcomponent(equations::AbstractIdealMhdMultiIonEquations) = Base.OneTo(ncomponents(equations))
+@inline function eachcomponent(equations::AbstractIdealMhdMultiIonEquations)
+    Base.OneTo(ncomponents(equations))
+end
 
 # Diffusion equation: first order hyperbolic system
 abstract type AbstractHyperbolicDiffusionEquations{NDIMS, NVARS} <:
