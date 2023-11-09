@@ -94,7 +94,7 @@ end
 end
 
 have_nonconservative_terms(::IdealMhdMultiIonEquations2D) = True()
-nnoncons(::IdealMhdMultiIonEquations2D) = 4
+n_nonconservative_terms(::IdealMhdMultiIonEquations2D) = 4
 
 function varnames(::typeof(cons2cons), equations::IdealMhdMultiIonEquations2D)
     cons = ("B1", "B2", "B3")
