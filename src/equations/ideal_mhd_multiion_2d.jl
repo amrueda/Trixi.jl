@@ -424,13 +424,15 @@ function source_terms_collision_ion_electron_ohm(u, x, t,
 
     s_ohm = zero(MVector{nvariables(equations), eltype(u)})
     for k in eachcomponent(equations)
-        rho_k, _, _, _, _ = get_component(k, prim, equations)
+        rho_k, v1_k, v2_k, v3_k, _ = get_component(k, prim, equations)
 
         S_q1 = rho_k * charge_to_mass[k] * Se_q1 / total_electron_charge
         S_q2 = rho_k * charge_to_mass[k] * Se_q2 / total_electron_charge
         S_q3 = rho_k * charge_to_mass[k] * Se_q3 / total_electron_charge
 
-        set_component!(s_ohm, k, 0.0, S_q1, S_q2, S_q3, 0.0, equations)
+        S_E = (v1_k * S_q1 + v2_k * S_q2 + v3_k * S_q3)
+
+        set_component!(s_ohm, k, 0.0, S_q1, S_q2, S_q3, S_E, equations)
     end
 
     return SVector{nvariables(equations), real(equations)}(s + s_ohm)
