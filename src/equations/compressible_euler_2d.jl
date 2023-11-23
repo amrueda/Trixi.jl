@@ -150,6 +150,25 @@ function initial_condition_density_wave(x, t, equations::CompressibleEulerEquati
 end
 
 """
+    initial_condition_density_wave_highdensity(x, t, equations::CompressibleEulerEquations2D)
+
+A sine wave in the density with constant velocity and pressure; reduces the
+compressible Euler equations to the linear advection equations.
+High density version of [`initial_condition_density_wave`](@ref).
+"""
+function initial_condition_density_wave_highdensity(x, t,
+                                                    equations::CompressibleEulerEquations2D)
+    v1 = 0.1
+    v2 = 0.2
+    rho = 2.0 + 0.98 * sinpi(2 * (x[1] + x[2] - t * (v1 + v2)))
+    rho_v1 = rho * v1
+    rho_v2 = rho * v2
+    p = 20
+    rho_e = p / (equations.gamma - 1) + 1 / 2 * rho * (v1^2 + v2^2)
+    return SVector(rho, rho_v1, rho_v2, rho_e)
+end
+
+"""
     initial_condition_weak_blast_wave(x, t, equations::CompressibleEulerEquations2D)
 
 A weak blast wave taken from
@@ -373,6 +392,174 @@ Should be used together with [`StructuredMesh`](@ref).
     end
 
     return boundary_flux
+end
+
+@inline function characteristic_boundary_value_function(outer_boundary_value_function,
+                                                        u_inner, orientation::Integer,
+                                                        direction, x, t, equations)
+    # Get inverse of density
+    srho = 1 / u_inner[1]
+
+    # Get normal velocity
+    if iseven(direction) # u_inner is "left" of boundary, u_boundary is "right" of boundary
+        factor = 1
+    else # u_boundary is "left" of boundary, u_inner is "right" of boundary
+        factor = -1
+    end
+    if orientation == 1
+        vn = factor * u_inner[2] * srho
+    else
+        vn = factor * u_inner[3] * srho
+    end
+
+    # get pressure and Mach from state
+    p = pressure(u_inner, equations)
+    a = sqrt(equations.gamma * p * srho)
+    normalMachNo = abs(vn / a)
+
+    if vn < 0 # inflow
+        if normalMachNo < 1.0
+            # subsonic inflow: All variables from outside but pressure
+            cons = outer_boundary_value_function(x, t, equations)
+
+            prim = cons2prim(cons, equations)
+            prim = SVector(view(prim, 1:3)..., p)
+            cons = prim2cons(prim, equations)
+        else
+            # supersonic inflow: All variables from outside
+            cons = outer_boundary_value_function(x, t, equations)
+        end
+    else # outflow
+        if normalMachNo < 1.0
+            # subsonic outflow: All variables from inside but pressure
+            cons = outer_boundary_value_function(x, t, equations)
+
+            prim = cons2prim(u_inner, equations)
+            prim = SVector(view(prim, 1:3)..., pressure(cons, equations))
+            cons = prim2cons(prim, equations)
+        else
+            # supersonic outflow: All variables from inside
+            cons = u_inner
+        end
+    end
+
+    return cons
+end
+
+@inline function characteristic_boundary_value_function(outer_boundary_value_function,
+                                                        u_inner,
+                                                        normal_direction::AbstractVector,
+                                                        direction, x, t, equations)
+    # Get inverse of density
+    srho = 1 / u_inner[1]
+
+    # Get normal velocity
+    if iseven(direction) # u_inner is "left" of boundary, u_boundary is "right" of boundary
+        factor = 1
+    else # u_boundary is "left" of boundary, u_inner is "right" of boundary
+        factor = -1
+    end
+    vn = factor *
+         (normal_direction[1] * u_inner[2] + normal_direction[2] * u_inner[3]) /
+         norm(normal_direction)
+
+    # get pressure and Mach from state
+    p = pressure(u_inner, equations)
+    a = sqrt(equations.gamma * p * srho)
+    normalMachNo = abs(vn / a)
+
+    if vn < 0 # inflow
+        if normalMachNo < 1.0
+            # subsonic inflow: All variables from outside but pressure
+            cons = outer_boundary_value_function(x, t, equations)
+
+            prim = cons2prim(cons, equations)
+            prim = SVector(view(prim, 1:3)..., p)
+            cons = prim2cons(prim, equations)
+        else
+            # supersonic inflow: All variables from outside
+            cons = outer_boundary_value_function(x, t, equations)
+        end
+    else # outflow
+        if normalMachNo < 1.0
+            # subsonic outflow: All variables from inside but pressure
+            cons = outer_boundary_value_function(x, t, equations)
+
+            prim = cons2prim(u_inner, equations)
+            prim = SVector(view(prim, 1:3)..., pressure(cons, equations))
+            cons = prim2cons(prim, equations)
+        else
+            # supersonic outflow: All variables from inside
+            cons = u_inner
+        end
+    end
+
+    return cons
+end
+
+"""
+    initial_condition_double_mach_reflection(x, t, equations::CompressibleEulerEquations2D)
+
+Compressible Euler setup for a double Mach reflection problem.
+Involves strong shock interactions as well as steady / unsteady flow structures.
+Also exercises special boundary conditions along the bottom of the domain that is a mixture of
+Dirichlet and slip wall.
+See Section IV c on the paper below for details.
+
+- Paul Woodward and Phillip Colella (1984)
+  The Numerical Simulation of Two-Dimensional Fluid Flows with Strong Shocks.
+  [DOI: 10.1016/0021-9991(84)90142-6](https://doi.org/10.1016/0021-9991(84)90142-6)
+"""
+@inline function initial_condition_double_mach_reflection(x, t,
+                                                          equations::CompressibleEulerEquations2D)
+    if x[1] < 1 / 6 + (x[2] + 20 * t) / sqrt(3)
+        phi = pi / 6
+        sin_phi, cos_phi = sincos(phi)
+
+        rho = 8.0
+        v1 = 8.25 * cos_phi
+        v2 = -8.25 * sin_phi
+        p = 116.5
+    else
+        rho = 1.4
+        v1 = 0.0
+        v2 = 0.0
+        p = 1.0
+    end
+
+    prim = SVector(rho, v1, v2, p)
+    return prim2cons(prim, equations)
+end
+
+# Special mixed boundary condition type for the :Bottom of the domain.
+# It is charachteristic when x < 1/6 and a slip wall when x >= 1/6
+@inline function boundary_condition_mixed_dirichlet_wall(u_inner,
+                                                         normal_direction::AbstractVector,
+                                                         direction,
+                                                         x, t, surface_flux_function,
+                                                         equations::CompressibleEulerEquations2D)
+    # Note: Only for StructuredMesh
+    if x[1] < 1 / 6
+        # # From the BoundaryConditionDirichlet
+        # # get the external value of the solution
+        # u_boundary = initial_condition_double_mach_reflection(x, t, equations)
+
+        # From the BoundaryConditionCharacteristic
+        # get the external state of the solution
+        u_boundary = Trixi.characteristic_boundary_value_function(initial_condition_double_mach_reflection,
+                                                                  u_inner,
+                                                                  normal_direction,
+                                                                  direction, x, t,
+                                                                  equations)
+        # Calculate boundary flux
+        flux = surface_flux_function(u_boundary, u_inner, normal_direction, equations)
+    else # x[1] >= 1 / 6
+        # Use the free slip wall BC otherwise
+        flux = boundary_condition_slip_wall(u_inner, normal_direction, direction, x, t,
+                                            surface_flux_function, equations)
+    end
+
+    return flux
 end
 
 # Calculate 2D flux for a single point
@@ -1403,6 +1590,45 @@ end
 
     return SVector(w1, w2, w3, w4)
 end
+@inline entropy_math(u, equations, derivative::True) = cons2entropy(u, equations)
+
+# Transformation from conservative variables u to entropy vector dSdu, S = -rho*s/(gamma-1), s=ln(p)-gamma*ln(rho)
+@inline function cons2entropy_spec(u, equations::CompressibleEulerEquations2D)
+    rho, rho_v1, rho_v2, rho_e = u
+
+    v1 = rho_v1 / rho
+    v2 = rho_v2 / rho
+    v_square = v1^2 + v2^2
+    inv_rho_gammap1 = (1 / rho)^(equations.gamma + 1.0)
+
+    # The derivative vector for the modified specific entropy of Guermond et al.
+    w1 = inv_rho_gammap1 *
+         (0.5 * rho * (equations.gamma + 1.0) * v_square - equations.gamma * rho_e)
+    w2 = -rho_v1 * inv_rho_gammap1
+    w3 = -rho_v2 * inv_rho_gammap1
+    w4 = (1 / rho)^equations.gamma
+
+    # The derivative vector for other specific entropy
+    # sp = 1.0/(gammam1 * (rho_e - 0.5 * rho * v_square)
+    # w1 = gammam1 * 0.5 * v_square * sp - gamma / rho
+    # w2 = -gammam1 * v1 * sp
+    # w3 = -gammam1 * v2 * sp
+    # w4 = gammam1 * sp
+
+    return SVector(w1, w2, w3, w4)
+end
+@inline entropy_spec(u, equations, derivative::True) = cons2entropy_spec(u, equations)
+
+# Transformation from conservative variables u to d(p)/d(u)
+@inline function pressure(u, equations::CompressibleEulerEquations2D, derivative::True)
+    rho, rho_v1, rho_v2, rho_e = u
+
+    v1 = rho_v1 / rho
+    v2 = rho_v2 / rho
+    v_square = v1^2 + v2^2
+
+    return (equations.gamma - 1.0) * SVector(0.5 * v_square, -v1, -v2, 1.0)
+end
 
 @inline function entropy2cons(w, equations::CompressibleEulerEquations2D)
     # See Hughes, Franca, Mallet (1986) A new finite element formulation for CFD
@@ -1426,6 +1652,14 @@ end
     rho_v2 = rho_iota * V3
     rho_e = rho_iota * (1 - (V2^2 + V3^2) / (2 * V5))
     return SVector(rho, rho_v1, rho_v2, rho_e)
+end
+
+@inline function is_valid_state(cons, equations::CompressibleEulerEquations2D)
+    p = pressure(cons, equations)
+    if cons[1] <= 0.0 || p <= 0.0
+        return false
+    end
+    return true
 end
 
 # Convert primitive to conservative variables
@@ -1495,6 +1729,19 @@ end
         equations.inv_gamma_minus_one
 
     return S
+end
+
+# Calculate specific entropy for conservative variable u
+@inline function entropy_spec(u, equations::CompressibleEulerEquations2D)
+    rho, rho_v1, rho_v2, rho_e = u
+
+    # Modified specific entropy from Guermond et al. (2019)
+    s = (rho_e - 0.5 * (rho_v1^2 + rho_v2^2) / rho) * (1 / rho)^equations.gamma
+
+    # Other specific entropy
+    # rho_sp = rho/((equations.gamma - 1.0) * (rho_e - 0.5 * rho * v_square))
+    # s = log(p) - (equaions.gamma + 1) * log(rho)
+    return s
 end
 
 # Default entropy is the mathematical entropy

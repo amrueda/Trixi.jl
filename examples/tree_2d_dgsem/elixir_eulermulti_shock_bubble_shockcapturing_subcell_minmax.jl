@@ -88,14 +88,11 @@ volume_flux = flux_ranocha
 basis = LobattoLegendreBasis(3)
 
 limiter_idp = SubcellLimiterIDP(equations, basis;
-                                positivity_variables_cons = [
+                                local_minmax_variables_cons = [
                                     (i + 3 for i in eachcomponent(equations))...,
                                 ],
-                                positivity_variables_nonlinear = (),
-                                positivity_correction_factor = 0.1,
                                 spec_entropy = false,
-                                bar_states = false)
-
+                                bar_states = true)
 volume_integral = VolumeIntegralSubcellLimiting(limiter_idp;
                                                 volume_flux_dg = volume_flux,
                                                 volume_flux_fv = surface_flux)
@@ -124,7 +121,7 @@ analysis_callback = AnalysisCallback(semi, interval = analysis_interval,
 
 alive_callback = AliveCallback(analysis_interval = analysis_interval)
 
-save_solution = SaveSolutionCallback(interval = 300,
+save_solution = SaveSolutionCallback(interval = 600,
                                      save_initial_solution = true,
                                      save_final_solution = true,
                                      solution_variables = cons2prim)
@@ -140,10 +137,7 @@ callbacks = CallbackSet(summary_callback,
 ###############################################################################
 # run the simulation
 
-output_directory = "out"
-stage_callbacks = (SubcellLimiterIDPCorrection(),
-                   BoundsCheckCallback(save_errors = true, interval = 100,
-                                       output_directory = output_directory))
+stage_callbacks = (SubcellLimiterIDPCorrection(), BoundsCheckCallback(save_errors = false))
 
 sol = Trixi.solve(ode, Trixi.SimpleSSPRK33(stage_callbacks = stage_callbacks);
                   dt = 1.0, # solve needs some value here but it will be overwritten by the stepsize_callback

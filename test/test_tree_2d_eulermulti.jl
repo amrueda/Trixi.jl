@@ -75,6 +75,35 @@ end
     end
 end
 
+@trixi_testset "elixir_eulermulti_shock_bubble_shockcapturing_subcell_minmax.jl" begin
+    @test_trixi_include(joinpath(EXAMPLES_DIR,
+                                 "elixir_eulermulti_shock_bubble_shockcapturing_subcell_minmax.jl"),
+                        l2=[
+                            76.59096367977872,
+                            1.9879932386864356,
+                            59851.34515039375,
+                            0.18710988181124935,
+                            0.010631432251136084,
+                        ],
+                        linf=[
+                            212.71245739310544,
+                            27.399221359958894,
+                            158389.9681231281,
+                            0.6524718882809865,
+                            0.10630137919864985,
+                        ],
+                        initial_refinement_level=3,
+                        tspan=(0.0, 0.001))
+    # Ensure that we do not have excessive memory allocations
+    # (e.g., from type instabilities)
+    let
+        t = sol.t[end]
+        u_ode = sol.u[end]
+        du_ode = similar(u_ode)
+        @test (@allocated Trixi.rhs!(du_ode, u_ode, semi, t)) < 15000
+    end
+end
+
 @trixi_testset "elixir_eulermulti_ec.jl" begin
     @test_trixi_include(joinpath(EXAMPLES_DIR, "elixir_eulermulti_ec.jl"),
                         l2=[

@@ -94,6 +94,7 @@ end
 end
 
 have_nonconservative_terms(::IdealMhdMultiIonEquations2D) = True()
+n_nonconservative_terms(::IdealMhdMultiIonEquations2D) = 4
 
 function varnames(::typeof(cons2cons), equations::IdealMhdMultiIonEquations2D)
     cons = ("B1", "B2", "B3")
@@ -443,9 +444,10 @@ function electron_pressure_zero(u, equations::IdealMhdMultiIonEquations2D)
 end
 
 """
+  flux_nonconservative_ruedaramirez_etal(u_ll, u_rr, orientation::Integer, equations::IdealMhdMultiIonEquations2D)
 Total entropy-conserving non-conservative two-point "flux"" as described in 
 - Rueda-Ramírez et al. (2023)
-The term is composed of three parts
+The flux is composed of three terms that can be written as the product of local and symmetric parts
 * The Powell term: Implemented
 * The MHD term: Implemented
 * The "term 3": Implemented
@@ -489,10 +491,10 @@ The term is composed of three parts
     f = zero(MVector{nvariables(equations), eltype(u_ll)})
 
     if orientation == 1
-        # Entries of Powell term for induction equation (already in Trixi's non-conservative form)
-        f[1] = v1_plus_ll * B1_rr
-        f[2] = v2_plus_ll * B1_rr
-        f[3] = v3_plus_ll * B1_rr
+        # Entries of Powell term for induction equation
+        f[1] = v1_plus_ll * B1_avg
+        f[2] = v2_plus_ll * B1_avg
+        f[3] = v3_plus_ll * B1_avg
 
         for k in eachcomponent(equations)
             # Compute term 2 (MHD)
@@ -514,29 +516,22 @@ The term is composed of three parts
             f5 += (B2_ll * (vk1_minus_avg * B2_avg - vk2_minus_avg * B1_avg) +
                    B3_ll * (vk1_minus_avg * B3_avg - vk3_minus_avg * B1_avg))
 
-            # Adjust non-conservative terms 2 and 3 to Trixi discretization: CHANGE!?!
-            f2 = 2 * f2 - charge_ratio_ll[k] * (0.5 * mag_norm_ll - B1_ll * B1_ll)
-            f3 = 2 * f3 + charge_ratio_ll[k] * B1_ll * B2_ll
-            f4 = 2 * f4 + charge_ratio_ll[k] * B1_ll * B3_ll
-            f5 = (2 * f5 - B2_ll * (vk1_minus_ll * B2_ll - vk2_minus_ll * B1_ll)
-                  -
-                  B3_ll * (vk1_minus_ll * B3_ll - vk3_minus_ll * B1_ll))
-
-            # Compute Powell term (already consistent with Trixi's non-conservative discretization)
-            f2 += charge_ratio_ll[k] * B1_ll * B1_rr
-            f3 += charge_ratio_ll[k] * B2_ll * B1_rr
-            f4 += charge_ratio_ll[k] * B3_ll * B1_rr
-            f5 += (v1_plus_ll * B1_ll + v2_plus_ll * B2_ll + v3_plus_ll * B3_ll) * B1_rr
+            # Compute Powell term
+            f2 += charge_ratio_ll[k] * B1_ll * B1_avg
+            f3 += charge_ratio_ll[k] * B2_ll * B1_avg
+            f4 += charge_ratio_ll[k] * B3_ll * B1_avg
+            f5 += (v1_plus_ll * B1_ll + v2_plus_ll * B2_ll + v3_plus_ll * B3_ll) *
+                  B1_avg
 
             # Append to the flux vector
             set_component!(f, k, 0, f2, f3, f4, f5, equations)
         end
 
     else #if orientation == 2
-        # Entries of Powell term for induction equation (already in Trixi's non-conservative form)
-        f[1] = v1_plus_ll * B2_rr
-        f[2] = v2_plus_ll * B2_rr
-        f[3] = v3_plus_ll * B2_rr
+        # Entries of Powell term for induction equation
+        f[1] = v1_plus_ll * B2_avg
+        f[2] = v2_plus_ll * B2_avg
+        f[3] = v3_plus_ll * B2_avg
 
         for k in eachcomponent(equations)
             # Compute term 2 (MHD)
@@ -558,25 +553,331 @@ The term is composed of three parts
             f5 += (B1_ll * (vk2_minus_avg * B1_avg - vk1_minus_avg * B2_avg) +
                    B3_ll * (vk2_minus_avg * B3_avg - vk3_minus_avg * B2_avg))
 
-            # Adjust non-conservative terms 2 and 3 to Trixi discretization: CHANGE!?!
-            f2 = 2 * f2 + charge_ratio_ll[k] * B2_ll * B1_ll
-            f3 = 2 * f3 - charge_ratio_ll[k] * (0.5 * mag_norm_ll - B2_ll * B2_ll)
-            f4 = 2 * f4 + charge_ratio_ll[k] * B2_ll * B3_ll
-            f5 = (2 * f5 - B1_ll * (vk2_minus_ll * B1_ll - vk1_minus_ll * B2_ll)
-                  -
-                  B3_ll * (vk2_minus_ll * B3_ll - vk3_minus_ll * B2_ll))
-
-            # Compute Powell term (already consistent with Trixi's non-conservative discretization)
-            f2 += charge_ratio_ll[k] * B1_ll * B2_rr
-            f3 += charge_ratio_ll[k] * B2_ll * B2_rr
-            f4 += charge_ratio_ll[k] * B3_ll * B2_rr
-            f5 += (v1_plus_ll * B1_ll + v2_plus_ll * B2_ll + v3_plus_ll * B3_ll) * B2_rr
+            # Compute Powell term
+            f2 += charge_ratio_ll[k] * B1_ll * B2_avg
+            f3 += charge_ratio_ll[k] * B2_ll * B2_avg
+            f4 += charge_ratio_ll[k] * B3_ll * B2_avg
+            f5 += (v1_plus_ll * B1_ll + v2_plus_ll * B2_ll + v3_plus_ll * B3_ll) *
+                  B2_avg
 
             # Append to the flux vector
             set_component!(f, k, 0, f2, f3, f4, f5, equations)
         end
     end
 
+    # We multiply by 2 to compensate the multiplication by 0.5 in the Trixi routines
+    return SVector(2 * f)
+end
+"""
+    flux_nonconservative_ruedaramirez_etal(u_ll, orientation::Integer,
+                                            equations::IdealMhdMultiIonEquations2D,
+                                            nonconservative_type::NonConservativeLocal,
+                                            noncons_term::Integer)
+Local part of the non-conservative two-point "flux"" as described in 
+- Rueda-Ramírez et al. (2023)
+The flux is composed of three/four terms that can be written as the product of local and symmetric parts
+* The Powell term: Implemented
+* The MHD term: Implemented
+* The "term 3/4": Implemented
+"""
+@inline function flux_nonconservative_ruedaramirez_etal(u_ll, orientation::Integer,
+                                                        equations::IdealMhdMultiIonEquations2D,
+                                                        nonconservative_type::NonConservativeLocal,
+                                                        noncons_term::Integer)
+    @unpack charge_to_mass = equations
+    # Unpack left and right states to get the magnetic field
+    B1_ll, B2_ll, B3_ll = magnetic_field(u_ll, equations)
+
+    # Compute charge ratio of u_ll
+    charge_ratio_ll = zero(MVector{ncomponents(equations), eltype(u_ll)})
+    total_electron_charge = zero(eltype(u_ll))
+    for k in eachcomponent(equations)
+        rho_k = u_ll[3 + (k - 1) * 5 + 1]
+        charge_ratio_ll[k] = rho_k * charge_to_mass[k]
+        total_electron_charge += charge_ratio_ll[k]
+    end
+    charge_ratio_ll ./= total_electron_charge
+
+    # Compute auxiliary variables
+    v1_plus_ll, v2_plus_ll, v3_plus_ll, vk1_plus_ll, vk2_plus_ll, vk3_plus_ll = charge_averaged_velocities(u_ll,
+                                                                                                           equations)
+
+    f = zero(MVector{nvariables(equations), eltype(u_ll)})
+
+    if noncons_term == 1
+        # Powell term
+        #############
+        if orientation == 1
+            # Entries of Powell term for induction equation
+            f[1] = v1_plus_ll
+            f[2] = v2_plus_ll
+            f[3] = v3_plus_ll
+
+            for k in eachcomponent(equations)
+                # Compute Powell term
+                f2 = charge_ratio_ll[k] * B1_ll
+                f3 = charge_ratio_ll[k] * B2_ll
+                f4 = charge_ratio_ll[k] * B3_ll
+                f5 = (v1_plus_ll * B1_ll + v2_plus_ll * B2_ll + v3_plus_ll * B3_ll)
+
+                # Append to the flux vector
+                set_component!(f, k, 0, f2, f3, f4, f5, equations)
+            end
+
+        else #if orientation == 2
+            # Entries of Powell term for induction equation
+            f[1] = v1_plus_ll
+            f[2] = v2_plus_ll
+            f[3] = v3_plus_ll
+
+            for k in eachcomponent(equations)
+                # Compute Powell term
+                f2 = charge_ratio_ll[k] * B1_ll
+                f3 = charge_ratio_ll[k] * B2_ll
+                f4 = charge_ratio_ll[k] * B3_ll
+                f5 = (v1_plus_ll * B1_ll + v2_plus_ll * B2_ll + v3_plus_ll * B3_ll)
+
+                # Append to the flux vector
+                set_component!(f, k, 0, f2, f3, f4, f5, equations)
+            end
+        end
+    elseif noncons_term == 2
+        # Term "2" (MHD)
+        ################
+        if orientation == 1
+            for k in eachcomponent(equations)
+                # Compute term 2 (MHD)
+                f2 = charge_ratio_ll[k]
+                f3 = charge_ratio_ll[k]
+                f4 = charge_ratio_ll[k]
+                f5 = vk1_plus_ll[k]
+
+                # Append to the flux vector
+                set_component!(f, k, 0, f2, f3, f4, f5, equations)
+            end
+
+        else #if orientation == 2
+            for k in eachcomponent(equations)
+                # Compute term 2 (MHD)
+                f2 = charge_ratio_ll[k]
+                f3 = charge_ratio_ll[k]
+                f4 = charge_ratio_ll[k]
+                f5 = vk2_plus_ll[k]
+
+                # Append to the flux vector
+                set_component!(f, k, 0, f2, f3, f4, f5, equations)
+            end
+        end
+    elseif noncons_term == 3
+        # Term "3" (multi-ion)
+        ######################
+        if orientation == 1
+            for k in eachcomponent(equations)
+                # Compute term 3 (only needed for NCOMP>1)
+                f5 = B2_ll
+
+                # Append to the flux vector
+                set_component!(f, k, 0, 0, 0, 0, f5, equations)
+            end
+
+        else #if orientation == 2
+            for k in eachcomponent(equations)
+                # Compute term 3 (only needed for NCOMP>1)
+                f5 = B1_ll
+
+                # Append to the flux vector
+                set_component!(f, k, 0, 0, 0, 0, f5, equations)
+            end
+        end
+    elseif noncons_term == 4
+        # Term "4" (multi-ion)
+        ######################
+        if orientation == 1
+            for k in eachcomponent(equations)
+                # Compute term 4 (only needed for NCOMP>1)
+                f5 = B3_ll
+
+                # Append to the flux vector
+                set_component!(f, k, 0, 0, 0, 0, f5, equations)
+            end
+
+        else #if orientation == 2
+            for k in eachcomponent(equations)
+                # Compute term 4 (only needed for NCOMP>1)
+                f5 = B3_ll
+
+                # Append to the flux vector
+                set_component!(f, k, 0, 0, 0, 0, f5, equations)
+            end
+        end
+    end
+    # We multiply by 2 to compensate the multiplication by 0.5 in the Trixi routines
+    return SVector(2 * f)
+end
+"""
+    flux_nonconservative_ruedaramirez_etal(u_ll, u_rr, orientation::Integer,
+                                           equations::IdealGlmMhdEquations2D,
+                                           nonconservative_type::NonConservativeSymmetric,
+                                           noncons_term::Integer)
+Symmetric part of non-conservative two-point "flux"" as described in 
+- Rueda-Ramírez et al. (2023)
+The flux is composed of three/four terms that can be written as the product of local and symmetric parts
+* The Powell term: Implemented
+* The MHD term: Implemented
+* The "term 3/4": Implemented
+"""
+@inline function flux_nonconservative_ruedaramirez_etal(u_ll, u_rr,
+                                                        orientation::Integer,
+                                                        equations::IdealMhdMultiIonEquations2D,
+                                                        nonconservative_type::NonConservativeSymmetric,
+                                                        noncons_term::Integer)
+    @unpack charge_to_mass = equations
+    # Unpack left and right states to get the magnetic field
+    B1_ll, B2_ll, B3_ll = magnetic_field(u_ll, equations)
+    B1_rr, B2_rr, B3_rr = magnetic_field(u_rr, equations)
+
+    # Compute important averages
+    B1_avg = 0.5 * (B1_ll + B1_rr)
+    B2_avg = 0.5 * (B2_ll + B2_rr)
+    B3_avg = 0.5 * (B3_ll + B3_rr)
+    mag_norm_ll = B1_ll^2 + B2_ll^2 + B3_ll^2
+    mag_norm_rr = B1_rr^2 + B2_rr^2 + B3_rr^2
+    mag_norm_avg = 0.5 * (mag_norm_ll + mag_norm_rr)
+
+    # Mean electron pressure
+    pe_mean = 0.5 * (equations.electron_pressure(u_ll, equations) +
+               equations.electron_pressure(u_rr, equations))
+
+    # Compute auxiliary variables
+    v1_plus_ll, v2_plus_ll, v3_plus_ll, vk1_plus_ll, vk2_plus_ll, vk3_plus_ll = charge_averaged_velocities(u_ll,
+                                                                                                           equations)
+    v1_plus_rr, v2_plus_rr, v3_plus_rr, vk1_plus_rr, vk2_plus_rr, vk3_plus_rr = charge_averaged_velocities(u_rr,
+                                                                                                           equations)
+
+    f = zero(MVector{nvariables(equations), eltype(u_ll)})
+
+    if noncons_term == 1
+        # Powell term
+        #############
+        if orientation == 1
+            # Entries of Powell term for induction equation
+            f[1] = B1_avg
+            f[2] = B1_avg
+            f[3] = B1_avg
+            for k in eachcomponent(equations)
+                # Append to the flux vector
+                set_component!(f, k, 0, B1_avg, B1_avg, B1_avg, B1_avg, equations)
+            end
+
+        else #if orientation == 2
+            # Entries of Powell term for induction equation
+            f[1] = B2_avg
+            f[2] = B2_avg
+            f[3] = B2_avg
+            for k in eachcomponent(equations)
+                # Append to the flux vector
+                set_component!(f, k, 0, B2_avg, B2_avg, B2_avg, B2_avg, equations)
+            end
+        end
+    elseif noncons_term == 2
+        # Term 2 (MHD)
+        ##############
+        if orientation == 1
+            for k in eachcomponent(equations)
+                # Compute term 2 (MHD)
+                f2 = (0.5 * mag_norm_avg - B1_avg * B1_avg + pe_mean)
+                f3 = (-B1_avg * B2_avg)
+                f4 = (-B1_avg * B3_avg)
+                f5 = pe_mean
+
+                # Append to the flux vector
+                set_component!(f, k, 0, f2, f3, f4, f5, equations)
+            end
+
+        else #if orientation == 2
+            for k in eachcomponent(equations)
+                # Compute term 2 (MHD)
+                f2 = (-B2_avg * B1_avg)
+                f3 = (-B2_avg * B2_avg + 0.5 * mag_norm_avg + pe_mean)
+                f4 = (-B2_avg * B3_avg)
+                f5 = pe_mean
+
+                # Append to the flux vector
+                set_component!(f, k, 0, f2, f3, f4, f5, equations)
+            end
+        end
+    elseif noncons_term == 3
+        # Term 3 (multi-ion)
+        ####################
+        if orientation == 1
+            for k in eachcomponent(equations)
+                # Compute term 3 (only needed for NCOMP>1)
+                vk1_minus_ll = v1_plus_ll - vk1_plus_ll[k]
+                vk2_minus_ll = v2_plus_ll - vk2_plus_ll[k]
+                vk1_minus_rr = v1_plus_rr - vk1_plus_rr[k]
+                vk2_minus_rr = v2_plus_rr - vk2_plus_rr[k]
+                vk1_minus_avg = 0.5 * (vk1_minus_ll + vk1_minus_rr)
+                vk2_minus_avg = 0.5 * (vk2_minus_ll + vk2_minus_rr)
+
+                f5 = (vk1_minus_avg * B2_avg - vk2_minus_avg * B1_avg)
+
+                # Append to the flux vector
+                set_component!(f, k, 0, 0, 0, 0, f5, equations)
+            end
+
+        else #if orientation == 2
+            for k in eachcomponent(equations)
+                # Compute term 3 (only needed for NCOMP>1)
+                vk1_minus_ll = v1_plus_ll - vk1_plus_ll[k]
+                vk2_minus_ll = v2_plus_ll - vk2_plus_ll[k]
+                vk1_minus_rr = v1_plus_rr - vk1_plus_rr[k]
+                vk2_minus_rr = v2_plus_rr - vk2_plus_rr[k]
+                vk1_minus_avg = 0.5 * (vk1_minus_ll + vk1_minus_rr)
+                vk2_minus_avg = 0.5 * (vk2_minus_ll + vk2_minus_rr)
+
+                f5 = (vk2_minus_avg * B1_avg - vk1_minus_avg * B2_avg)
+
+                # Append to the flux vector
+                set_component!(f, k, 0, 0, 0, 0, f5, equations)
+            end
+        end
+    elseif noncons_term == 4
+        # Term 4 (multi-ion)
+        ####################
+        if orientation == 1
+            for k in eachcomponent(equations)
+                # Compute term 4 (only needed for NCOMP>1)
+                vk1_minus_ll = v1_plus_ll - vk1_plus_ll[k]
+                vk3_minus_ll = v3_plus_ll - vk3_plus_ll[k]
+                vk1_minus_rr = v1_plus_rr - vk1_plus_rr[k]
+                vk3_minus_rr = v3_plus_rr - vk3_plus_rr[k]
+                vk1_minus_avg = 0.5 * (vk1_minus_ll + vk1_minus_rr)
+                vk3_minus_avg = 0.5 * (vk3_minus_ll + vk3_minus_rr)
+
+                f5 = (vk1_minus_avg * B3_avg - vk3_minus_avg * B1_avg)
+
+                # Append to the flux vector
+                set_component!(f, k, 0, 0, 0, 0, f5, equations)
+            end
+
+        else #if orientation == 2
+            for k in eachcomponent(equations)
+                # Compute term 4 (only needed for NCOMP>1)
+                vk2_minus_ll = v2_plus_ll - vk2_plus_ll[k]
+                vk3_minus_ll = v3_plus_ll - vk3_plus_ll[k]
+                vk2_minus_rr = v2_plus_rr - vk2_plus_rr[k]
+                vk3_minus_rr = v3_plus_rr - vk3_plus_rr[k]
+                vk2_minus_avg = 0.5 * (vk2_minus_ll + vk2_minus_rr)
+                vk3_minus_avg = 0.5 * (vk3_minus_ll + vk3_minus_rr)
+
+                f5 = (vk2_minus_avg * B3_avg - vk3_minus_avg * B2_avg)
+
+                # Append to the flux vector
+                set_component!(f, k, 0, 0, 0, 0, f5, equations)
+            end
+        end
+    end
+    # We don't multiply by 2 because the local term is already multiplied by 2
     return SVector(f)
 end
 
@@ -596,9 +897,13 @@ The term is composed of three parts
 
     # Compute important averages
     mag_norm_rr = B1_rr^2 + B2_rr^2 + B3_rr^2
+    mag_norm_ll = B1_ll^2 + B2_ll^2 + B3_ll^2
+    mag_norm_avg = 0.5 * (mag_norm_ll + mag_norm_rr)
 
     # Electron pressure 
     pe_rr = equations.electron_pressure(u_rr, equations)
+    pe_ll = equations.electron_pressure(u_ll, equations)
+    pe_avg = 0.5 * (pe_ll + pe_rr)
 
     # Compute charge ratio of u_ll
     charge_ratio_ll = zero(MVector{ncomponents(equations), eltype(u_ll)})
@@ -619,69 +924,83 @@ The term is composed of three parts
     f = zero(MVector{nvariables(equations), eltype(u_ll)})
 
     if orientation == 1
-        # Entries of Powell term for induction equation (already in Trixi's non-conservative form)
-        f[1] = v1_plus_ll * B1_rr
-        f[2] = v2_plus_ll * B1_rr
-        f[3] = v3_plus_ll * B1_rr
+        B1_avg = 0.5 * (B1_ll + B1_rr)
+        # Entries of Powell term for induction equation
+        f[1] = v1_plus_ll * B1_avg
+        f[2] = v2_plus_ll * B1_avg
+        f[3] = v3_plus_ll * B1_avg
         for k in eachcomponent(equations)
             # Compute term 2 (MHD)
-            f2 = charge_ratio_ll[k] * (0.5 * mag_norm_rr - B1_rr * B1_rr + pe_rr)
-            f3 = charge_ratio_ll[k] * (-B1_rr * B2_rr)
-            f4 = charge_ratio_ll[k] * (-B1_rr * B3_rr)
-            f5 = vk1_plus_ll[k] * pe_rr
+            f2 = charge_ratio_ll[k] *
+                 (0.5 * mag_norm_avg - 0.5 * B1_ll * B1_ll - 0.5 * B1_rr * B1_rr +
+                  pe_avg)
+            f3 = charge_ratio_ll[k] * (-0.5 * B1_ll * B2_ll - 0.5 * B1_rr * B2_rr)
+            f4 = charge_ratio_ll[k] * (-0.5 * B1_ll * B3_ll - 0.5 * B1_rr * B3_rr)
+            f5 = vk1_plus_ll[k] * pe_avg
 
             # Compute term 3 (only needed for NCOMP>1)
+            vk1_minus_ll = v1_plus_ll - vk1_plus_ll[k]
+            vk2_minus_ll = v2_plus_ll - vk2_plus_ll[k]
+            vk3_minus_ll = v3_plus_ll - vk3_plus_ll[k]
             vk1_minus_rr = v1_plus_rr - vk1_plus_rr[k]
             vk2_minus_rr = v2_plus_rr - vk2_plus_rr[k]
             vk3_minus_rr = v3_plus_rr - vk3_plus_rr[k]
-            f5 += (B2_ll * (vk1_minus_rr * B2_rr - vk2_minus_rr * B1_rr) +
-                   B3_ll * (vk1_minus_rr * B3_rr - vk3_minus_rr * B1_rr))
+            f5 += (B2_ll * (0.5 * (vk1_minus_ll * B2_ll - vk2_minus_ll * B1_ll) +
+                    0.5 * (vk1_minus_rr * B2_rr - vk2_minus_rr * B1_rr)) +
+                   B3_ll * (0.5 * (vk1_minus_ll * B3_ll - vk3_minus_ll * B1_ll) +
+                    0.5 * (vk1_minus_rr * B3_rr - vk3_minus_rr * B1_rr)))
 
-            # Compute Powell term (already consistent with Trixi's non-conservative discretization)
-            f2 += charge_ratio_ll[k] * B1_ll * B1_rr
-            f3 += charge_ratio_ll[k] * B2_ll * B1_rr
-            f4 += charge_ratio_ll[k] * B3_ll * B1_rr
-            f5 += (v1_plus_ll * B1_ll + v2_plus_ll * B2_ll + v3_plus_ll * B3_ll) * B1_rr
-
-            # It's not needed to adjust to Trixi's non-conservative form
+            # Compute Powell term
+            f2 += charge_ratio_ll[k] * B1_ll * B1_avg
+            f3 += charge_ratio_ll[k] * B2_ll * B1_avg
+            f4 += charge_ratio_ll[k] * B3_ll * B1_avg
+            f5 += (v1_plus_ll * B1_ll + v2_plus_ll * B2_ll + v3_plus_ll * B3_ll) *
+                  B1_avg
 
             # Append to the flux vector
             set_component!(f, k, 0, f2, f3, f4, f5, equations)
         end
     else #if orientation == 2
-        # Entries of Powell term for induction equation (already in Trixi's non-conservative form)
-        f[1] = v1_plus_ll * B2_rr
-        f[2] = v2_plus_ll * B2_rr
-        f[3] = v3_plus_ll * B2_rr
+        B2_avg = 0.5 * (B2_ll + B2_rr)
+        # Entries of Powell term for induction equation
+        f[1] = v1_plus_ll * B2_avg
+        f[2] = v2_plus_ll * B2_avg
+        f[3] = v3_plus_ll * B2_avg
 
         for k in eachcomponent(equations)
             # Compute term 2 (MHD)
-            f2 = charge_ratio_ll[k] * (-B2_rr * B1_rr)
-            f3 = charge_ratio_ll[k] * (-B2_rr * B2_rr + 0.5 * mag_norm_rr + pe_rr)
-            f4 = charge_ratio_ll[k] * (-B2_rr * B3_rr)
-            f5 = vk2_plus_ll[k] * pe_rr
+            f2 = charge_ratio_ll[k] * (-0.5 * B2_ll * B1_ll - 0.5 * B2_rr * B1_rr)
+            f3 = charge_ratio_ll[k] *
+                 (-0.5 * B2_ll * B2_ll - 0.5 * B2_rr * B2_rr + 0.5 * mag_norm_avg +
+                  pe_avg)
+            f4 = charge_ratio_ll[k] * (-0.5 * B2_ll * B3_ll - 0.5 * B2_rr * B3_rr)
+            f5 = vk2_plus_ll[k] * pe_avg
 
             # Compute term 3 (only needed for NCOMP>1)
+            vk1_minus_ll = v1_plus_ll - vk1_plus_ll[k]
+            vk2_minus_ll = v2_plus_ll - vk2_plus_ll[k]
+            vk3_minus_ll = v3_plus_ll - vk3_plus_ll[k]
             vk1_minus_rr = v1_plus_rr - vk1_plus_rr[k]
             vk2_minus_rr = v2_plus_rr - vk2_plus_rr[k]
             vk3_minus_rr = v3_plus_rr - vk3_plus_rr[k]
-            f5 += (B1_ll * (vk2_minus_rr * B1_rr - vk1_minus_rr * B2_rr) +
-                   B3_ll * (vk2_minus_rr * B3_rr - vk3_minus_rr * B2_rr))
+            f5 += (B1_ll * (0.5 * (vk2_minus_ll * B1_ll - vk1_minus_ll * B2_ll) +
+                    0.5 * (vk2_minus_rr * B1_rr - vk1_minus_rr * B2_rr)) +
+                   B3_ll * (0.5 * (vk2_minus_ll * B3_ll - vk3_minus_ll * B2_ll) +
+                    0.5 * (vk2_minus_rr * B3_rr - vk3_minus_rr * B2_rr)))
 
-            # Compute Powell term (already consistent with Trixi's non-conservative discretization)
-            f2 += charge_ratio_ll[k] * B1_ll * B2_rr
-            f3 += charge_ratio_ll[k] * B2_ll * B2_rr
-            f4 += charge_ratio_ll[k] * B3_ll * B2_rr
-            f5 += (v1_plus_ll * B1_ll + v2_plus_ll * B2_ll + v3_plus_ll * B3_ll) * B2_rr
-
-            # It's not needed to adjust to Trixi's non-conservative form
+            # Compute Powell term
+            f2 += charge_ratio_ll[k] * B1_ll * B2_avg
+            f3 += charge_ratio_ll[k] * B2_ll * B2_avg
+            f4 += charge_ratio_ll[k] * B3_ll * B2_avg
+            f5 += (v1_plus_ll * B1_ll + v2_plus_ll * B2_ll + v3_plus_ll * B3_ll) *
+                  B2_avg
 
             # Append to the flux vector
             set_component!(f, k, 0, f2, f3, f4, f5, equations)
         end
     end
 
-    return SVector(f)
+    return SVector(2 * f)
 end
 
 """
@@ -978,6 +1297,19 @@ function cons2prim(u, equations::IdealMhdMultiIonEquations2D)
     end
 
     return SVector(prim)
+end
+
+@inline function is_valid_state(cons, equations::IdealMhdMultiIonEquations2D)
+    prim = cons2prim(cons, equations)
+
+    for k in eachcomponent(equations)
+        rho, _, _, _, p = get_component(k, prim, equations)
+        if rho <= 0.0 || p <= 0.0
+            return false
+        end
+    end
+
+    return true
 end
 
 """
