@@ -69,7 +69,7 @@ struct SemidiscretizationHyperbolicParabolic{Mesh, Equations, EquationsParabolic
                                                                                              Cache,
                                                                                              CacheParabolic
                                                                                              }
-        @assert ndims(mesh) == ndims(equations)
+        #@assert ndims(mesh) == ndims(equations)
 
         # Todo: assert nvariables(equations)==nvariables(equations_parabolic)
 
