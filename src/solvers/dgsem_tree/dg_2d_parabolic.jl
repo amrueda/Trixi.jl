@@ -294,7 +294,7 @@ end
 function calc_viscous_fluxes!(flux_viscous,
                               gradients, u_transformed,
                               mesh::Union{TreeMesh{2}, P4estMesh{2}},
-                              equations_parabolic::AbstractEquationsParabolic,
+                              equations_parabolic::AbstractEquationsParabolic{2},
                               dg::DG, cache, cache_parabolic)
     gradients_x, gradients_y = gradients
     flux_viscous_x, flux_viscous_y = flux_viscous # output arrays
@@ -317,6 +317,43 @@ function calc_viscous_fluxes!(flux_viscous,
             set_node_vars!(flux_viscous_x, flux_viscous_node_x, equations_parabolic, dg,
                            i, j, element)
             set_node_vars!(flux_viscous_y, flux_viscous_node_y, equations_parabolic, dg,
+                           i, j, element)
+        end
+    end
+end
+
+function calc_viscous_fluxes!(flux_viscous,
+                              gradients, u_transformed,
+                              mesh::Union{TreeMesh{2}, P4estMesh{2}},
+                              equations_parabolic::AbstractEquationsParabolic{3},
+                              dg::DG, cache, cache_parabolic)
+    gradients_x, gradients_y, gradients_z = gradients
+    flux_viscous_x, flux_viscous_y, flux_viscous_z = flux_viscous # output arrays
+
+    @threaded for element in eachelement(dg, cache)
+        for j in eachnode(dg), i in eachnode(dg)
+            # Get solution and gradients
+            u_node = get_node_vars(u_transformed, equations_parabolic, dg, i, j,
+                                   element)
+            gradients_1_node = get_node_vars(gradients_x, equations_parabolic, dg, i, j,
+                                             element)
+            gradients_2_node = get_node_vars(gradients_y, equations_parabolic, dg, i, j,
+                                             element)
+            gradients_3_node = get_node_vars(gradients_z, equations_parabolic, dg, i, j,
+                                             element)
+            
+            # Calculate viscous flux and store each component for later use
+            flux_viscous_node_x = flux(u_node, (gradients_1_node, gradients_2_node, gradients_3_node), 1,
+                                       equations_parabolic)
+            flux_viscous_node_y = flux(u_node, (gradients_1_node, gradients_2_node, gradients_3_node), 2,
+                                       equations_parabolic)
+            flux_viscous_node_z = flux(u_node, (gradients_1_node, gradients_2_node, gradients_3_node), 3,
+                                       equations_parabolic)
+            set_node_vars!(flux_viscous_x, flux_viscous_node_x, equations_parabolic, dg,
+                           i, j, element)
+            set_node_vars!(flux_viscous_y, flux_viscous_node_y, equations_parabolic, dg,
+                           i, j, element)
+            set_node_vars!(flux_viscous_z, flux_viscous_node_z, equations_parabolic, dg,
                            i, j, element)
         end
     end
