@@ -25,7 +25,7 @@ end
 # TODO: Here, size() causes a lot of allocations! Find an alternative to improve performance
 @inline function get_contravariant_vector(index, contravariant_vectors, indices...)
     SVector(ntuple(@inline(dim->contravariant_vectors[dim, index, indices...]),
-                   Val(size(contravariant_vectors, 1))))
+                   Val(ndims_space(contravariant_vectors))))
 end
 
 @inline function calc_boundary_flux_by_direction!(surface_flux_values, u, t,
