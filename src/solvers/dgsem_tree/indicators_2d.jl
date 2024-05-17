@@ -260,6 +260,19 @@ function create_cache(typ::Type{IndicatorLöhner}, mesh, equations::AbstractEqua
     create_cache(typ, equations, dg.basis)
 end
 
+# this method is used when the indicator is constructed as for AMR
+function create_cache(typ::Type{IndicatorLöhner}, mesh::AbstractMesh{2}, equations::AbstractEquations{3},
+                      dg::DGSEM, cache)
+    @unpack basis = dg
+    alpha = Vector{real(basis)}()
+
+    A = Array{real(basis), ndims(mesh)}
+    indicator_threaded = [A(undef, nnodes(basis), nnodes(basis))
+                          for _ in 1:Threads.nthreads()]
+
+    return (; alpha, indicator_threaded)
+end
+
 function (löhner::IndicatorLöhner)(u::AbstractArray{<:Any, 4},
                                    mesh, equations, dg::DGSEM, cache;
                                    kwargs...)
