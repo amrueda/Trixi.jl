@@ -49,22 +49,24 @@ function Base.resize!(elements::P4estElementContainer, capacity)
     _inverse_jacobian, _surface_flux_values = elements
 
     n_dims = ndims(elements)
+    ndims_spa = size(elements.node_coordinates, 1)
     n_nodes = size(elements.node_coordinates, 2)
     n_variables = size(elements.surface_flux_values, 1)
 
-    resize!(_node_coordinates, n_dims * n_nodes^n_dims * capacity)
+    resize!(_node_coordinates, ndims_spa * n_nodes^n_dims * capacity)
     elements.node_coordinates = unsafe_wrap(Array, pointer(_node_coordinates),
-                                            (n_dims, ntuple(_ -> n_nodes, n_dims)...,
+                                            (ndims_spa, ntuple(_ -> n_nodes, n_dims)...,
                                              capacity))
 
-    resize!(_jacobian_matrix, n_dims^2 * n_nodes^n_dims * capacity)
+    resize!(_jacobian_matrix, ndims_spa * n_dims * n_nodes^n_dims * capacity)
     elements.jacobian_matrix = unsafe_wrap(Array, pointer(_jacobian_matrix),
-                                           (n_dims, n_dims,
+                                           (ndims_spa, n_dims,
                                             ntuple(_ -> n_nodes, n_dims)..., capacity))
 
-    resize!(_contravariant_vectors, length(_jacobian_matrix))
+    resize!(_contravariant_vectors, ndims_spa^2 * n_nodes^n_dims * capacity)
     elements.contravariant_vectors = unsafe_wrap(Array, pointer(_contravariant_vectors),
-                                                 size(elements.jacobian_matrix))
+                                           (ndims_spa, ndims_spa,
+                                            ntuple(_ -> n_nodes, n_dims)..., capacity))
 
     resize!(_inverse_jacobian, n_nodes^n_dims * capacity)
     elements.inverse_jacobian = unsafe_wrap(Array, pointer(_inverse_jacobian),
