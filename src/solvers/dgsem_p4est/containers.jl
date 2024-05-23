@@ -64,9 +64,10 @@ function Base.resize!(elements::P4estElementContainer, capacity)
                                             ntuple(_ -> n_nodes, n_dims)..., capacity))
 
     resize!(_contravariant_vectors, ndims_spa^2 * n_nodes^n_dims * capacity)
-    elements.contravariant_vectors = unsafe_wrap(Array, pointer(_contravariant_vectors),
-                                           (ndims_spa, ndims_spa,
-                                            ntuple(_ -> n_nodes, n_dims)..., capacity))
+    elements.contravariant_vectors = PtrArray(pointer(_contravariant_vectors),
+                                                    (StaticInt(ndims_spa), ndims_spa,
+                                                    ntuple(_ -> n_nodes, n_dims)...,
+                                                    capacity))
 
     resize!(_inverse_jacobian, n_nodes^n_dims * capacity)
     elements.inverse_jacobian = unsafe_wrap(Array, pointer(_inverse_jacobian),
