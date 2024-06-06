@@ -136,6 +136,77 @@ end
 end
 
 """
+    flux_wintermeyer_etal(u_ll, u_rr, orientation_or_normal_direction,
+                          equations::ShallowWaterEquations2D)
+
+Total energy conservative (mathematical entropy for shallow water equations) split form.
+When the bottom topography is nonzero this scheme will be well-balanced when used as a `volume_flux`.
+The `surface_flux` should still use, e.g., [`flux_fjordholm_etal`](@ref).
+
+Further details are available in Theorem 1 of the paper:
+- Niklas Wintermeyer, Andrew R. Winters, Gregor J. Gassner and David A. Kopriva (2017)
+  An entropy stable nodal discontinuous Galerkin method for the two dimensional
+  shallow water equations on unstructured curvilinear meshes with discontinuous bathymetry
+  [DOI: 10.1016/j.jcp.2017.03.036](https://doi.org/10.1016/j.jcp.2017.03.036)
+"""
+@inline function flux_wintermeyer_etal(u_ll, u_rr, normal_direction::AbstractVector,
+                                       equations::ShallowWaterEquations3D)
+    # Unpack left and right state
+    h_ll, h_v1_ll, h_v2_ll, h_v3_ll, _ = u_ll
+    h_rr, h_v1_rr, h_v2_rr, h_v3_rr, _ = u_rr
+
+    # Get the velocities on either side
+    v1_ll, v2_ll, v3_ll = velocity(u_ll, equations)
+    v1_rr, v2_rr, v3_rr = velocity(u_rr, equations)
+
+    # Average each factor of products in flux
+    h_v1_avg = 0.5 * (h_v1_ll + h_v1_rr)
+    h_v2_avg = 0.5 * (h_v2_ll + h_v2_rr)
+    h_v3_avg = 0.5 * (h_v3_ll + h_v3_rr)
+    v1_avg = 0.5 * (v1_ll + v1_rr)
+    v2_avg = 0.5 * (v2_ll + v2_rr)
+    v3_avg = 0.5 * (v3_ll + v3_rr)
+    p_avg = 0.5 * equations.gravity * h_ll * h_rr
+
+    # Calculate fluxes depending on normal_direction
+    f1 = h_v1_avg * normal_direction[1] + h_v2_avg * normal_direction[2] + h_v3_avg * normal_direction[3]
+    f2 = f1 * v1_avg + p_avg * normal_direction[1]
+    f3 = f1 * v2_avg + p_avg * normal_direction[2]
+    f4 = f1 * v3_avg + p_avg * normal_direction[3]
+
+    return SVector(f1, f2, f3, f4, zero(eltype(u_ll)))
+end
+
+@inline function flux_fjordholm_etal(u_ll, u_rr, normal_direction::AbstractVector,
+                                     equations::ShallowWaterEquations3D)
+    # Unpack left and right state
+    h_ll = waterheight(u_ll, equations)
+    v1_ll, v2_ll, v3_ll = velocity(u_ll, equations)
+    h_rr = waterheight(u_rr, equations)
+    v1_rr, v2_rr, v3_rr = velocity(u_rr, equations)
+
+    v_dot_n_ll = v1_ll * normal_direction[1] + v2_ll * normal_direction[2] + v3_ll * normal_direction[3]
+    v_dot_n_rr = v1_rr * normal_direction[1] + v2_rr * normal_direction[2] + v3_rr * normal_direction[3]
+
+    # Average each factor of products in flux
+    h_avg = 0.5 * (h_ll + h_rr)
+    v1_avg = 0.5 * (v1_ll + v1_rr)
+    v2_avg = 0.5 * (v2_ll + v2_rr)
+    v3_avg = 0.5 * (v3_ll + v3_rr)
+    h2_avg = 0.5 * (h_ll^2 + h_rr^2)
+    p_avg = 0.5 * equations.gravity * h2_avg
+    v_dot_n_avg = 0.5 * (v_dot_n_ll + v_dot_n_rr)
+
+    # Calculate fluxes depending on normal_direction
+    f1 = h_avg * v_dot_n_avg
+    f2 = f1 * v1_avg + p_avg * normal_direction[1]
+    f3 = f1 * v2_avg + p_avg * normal_direction[2]
+    f4 = f1 * v3_avg + p_avg * normal_direction[3]
+
+    return SVector(f1, f2, f3, f4, zero(eltype(u_ll)))
+end
+
+"""
     flux_nonconservative_wintermeyer_etal(u_ll, u_rr, orientation::Integer,
                                           equations::ShallowWaterEquations3D)
     flux_nonconservative_wintermeyer_etal(u_ll, u_rr,
@@ -248,7 +319,7 @@ end
     h = waterheight(u, equations)
     v1, v2, v3 = velocity(u, equations)
 
-    c = equations.gravity * sqrt(h)
+    c = sqrt(equations.gravity * h)
     return abs(v1) + c, abs(v2) + c, abs(v3) + c
 end
 
