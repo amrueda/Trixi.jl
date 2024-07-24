@@ -13,15 +13,25 @@ function init_elements!(elements, mesh::Union{P4estMesh{2}, T8codeMesh{2}},
 
     calc_node_coordinates!(node_coordinates, mesh, basis)
 
+    # Spherical shell mapping
     if size(node_coordinates, 1) == 3
         # The mesh is a spherical shell
         for element in 1:ncells(mesh)
             # Compute Jacobian matrix as usual
             calc_jacobian_matrix!(jacobian_matrix, element, node_coordinates, basis)
+
             # Compute contravariant vectors with Giraldo's formula (cross-product form)
-            calc_contravariant_vectors_cubed_sphere!(contravariant_vectors, element,
-                                                     jacobian_matrix, node_coordinates,
-                                                     basis)
+            #= calc_contravariant_vectors_cubed_sphere!(contravariant_vectors, element,
+                                                        jacobian_matrix, node_coordinates,
+                                                        basis) =#
+
+            # Compute contravariant vectors with curl invariant form
+            calc_contravariant_vectors_cubed_sphere_curl_invariant!(contravariant_vectors,
+                                                                    element,
+                                                                    jacobian_matrix,
+                                                                    node_coordinates,
+                                                                    basis)
+
             # Compute the inverse Jacobian as the norm of the cross product of the covariant vectors
             for j in eachnode(basis), i in eachnode(basis)
                 inverse_jacobian[i, j, element] = 1 /
@@ -31,6 +41,7 @@ function init_elements!(elements, mesh::Union{P4estMesh{2}, T8codeMesh{2}},
                                                                              element]))
             end
         end
+        # Standard 2D mapping
     else
         for element in 1:ncells(mesh)
             calc_jacobian_matrix!(jacobian_matrix, element, node_coordinates, basis)
@@ -112,17 +123,15 @@ end
 #   https://doi.org/10.1002/1097-0363(20010430)35:8<869::AID-FLD116>3.0.CO;2-S
 # This is nothing but the cross-product form, but we end up with three contravariant vectors
 # because there are three space dimensions.
-function calc_contravariant_vectors_cubed_sphere!(contravariant_vectors::AbstractArray{
-                                                                                       <:Any,
-                                                                                       5
-                                                                                       },
+function calc_contravariant_vectors_cubed_sphere!(contravariant_vectors::AbstractArray{<:Any,
+                                                                                       5},
                                                   element,
                                                   jacobian_matrix, node_coordinates,
                                                   basis::LobattoLegendreBasis)
     @unpack derivative_matrix = basis
 
     for j in eachnode(basis), i in eachnode(basis)
-        radius = sqrt(sum(node_coordinates[:, i, j, element].^2))
+        radius = sqrt(sum(node_coordinates[:, i, j, element] .^ 2))
         for n in 1:3
             # (n, m, l) cyclic
             m = (n % 3) + 1
@@ -136,7 +145,8 @@ function calc_contravariant_vectors_cubed_sphere!(contravariant_vectors::Abstrac
                                                           jacobian_matrix[l, 2, i, j,
                                                                           element] *
                                                           node_coordinates[m, i, j,
-                                                                           element]) / radius
+                                                                           element]) /
+                                                         radius
 
             contravariant_vectors[n, 2, i, j, element] = (jacobian_matrix[l, 1, i, j,
                                                                           element] *
@@ -146,8 +156,9 @@ function calc_contravariant_vectors_cubed_sphere!(contravariant_vectors::Abstrac
                                                           jacobian_matrix[m, 1, i, j,
                                                                           element] *
                                                           node_coordinates[l, i, j,
-                                                                           element]) / radius
-
+                                                                           element]) /
+                                                         radius
+            #d(zeta)/d(x)
             contravariant_vectors[n, 3, i, j, element] = (jacobian_matrix[m, 1, i, j,
                                                                           element] *
                                                           jacobian_matrix[l, 2, i, j,
@@ -156,7 +167,133 @@ function calc_contravariant_vectors_cubed_sphere!(contravariant_vectors::Abstrac
                                                           jacobian_matrix[m, 2, i, j,
                                                                           element] *
                                                           jacobian_matrix[l, 1, i, j,
-                                                                          element]) / radius
+                                                                          element]) /
+                                                         radius
+        end
+    end
+
+    return contravariant_vectors
+end
+
+# Calculate contravariant vectors, multiplied by the Jacobian determinant J of the transformation mapping,
+# using the invariant curl form for a cubed sphere.
+# In the cubed sphere, the node coordinates are first mapped with polynomials in ξ and η, and then we add 
+# a linear ζ dependency, i.e.:
+#    xₗ(ξ, η, ζ) = ζ * xₗ(ξ, η) with ζ = 1 at the sphere surface.
+# 
+# As a result, the covariant vectors with respect to ζ are xₗ_ζ = xₗ
+function calc_contravariant_vectors_cubed_sphere_curl_invariant!(contravariant_vectors::AbstractArray{<:Any,
+                                                                                                      5},
+                                                                 element,
+                                                                 jacobian_matrix,
+                                                                 node_coordinates,
+                                                                 basis::LobattoLegendreBasis)
+    @unpack derivative_matrix = basis
+
+    # The general form is
+    # Jaⁱₙ = 0.5 * ( ∇ × (Xₘ ∇ Xₗ - Xₗ ∇ Xₘ) )ᵢ  where (n, m, l) cyclic and ∇ = (∂/∂ξ, ∂/∂η, ∂/∂ζ)ᵀ
+
+    for n in 1:3
+        # (n, m, l) cyclic
+        m = (n % 3) + 1
+        l = ((n + 1) % 3) + 1
+
+        # Calculate Ja¹ₙ = 0.5 * [ (Xₘ Xₗ_ζ - Xₗ Xₘ_ζ)_η - (Xₘ Xₗ_η - Xₗ Xₘ_η)_ζ ]
+        # For each of these, the first and second summand are computed in separate loops
+        # for performance reasons.
+
+        # First summand 0.5 * (Xₘ Xₗ_ζ - Xₗ Xₘ_ζ)_η
+        @turbo for j in eachnode(basis), i in eachnode(basis)
+            result = zero(eltype(contravariant_vectors))
+
+            for ii in eachnode(basis)
+                # Multiply derivative_matrix to j-dimension to differentiate wrt η
+                result += 0.5 * derivative_matrix[j, ii] *
+                          (node_coordinates[m, i, ii, element] *
+                           node_coordinates[l, i, ii, element] -
+                           node_coordinates[l, i, ii, element] *
+                           node_coordinates[m, i, ii, element])
+            end
+
+            contravariant_vectors[n, 1, i, j, element] = result
+        end
+
+        # Second summand -0.5 * (Xₘ Xₗ_η - Xₗ Xₘ_η)_ζ
+        @turbo for j in eachnode(basis), i in eachnode(basis)
+            # Due to the spherical-shell mapping, xₗ(ξ, η, ζ) = ζ * xₗ(ξ, η), we have
+            # 0.5 d/dζ (ζ^2 F(ξ, η)) = ζ F(ξ, η)
+
+            result = (node_coordinates[m, i, j, element] *
+                      jacobian_matrix[l, 2, i, j, element] -
+                      node_coordinates[l, i, j, element] *
+                      jacobian_matrix[m, 2, i, j, element])
+
+            contravariant_vectors[n, 1, i, j, element] -= result
+        end
+
+        # Calculate Ja²ₙ = 0.5 * [ (Xₘ Xₗ_ξ - Xₗ Xₘ_ξ)_ζ - (Xₘ Xₗ_ζ - Xₗ Xₘ_ζ)_ξ ]
+
+        # First summand 0.5 * (Xₘ Xₗ_ξ - Xₗ Xₘ_ξ)_ζ
+        @turbo for j in eachnode(basis), i in eachnode(basis)
+            # Due to the spherical-shell mapping, xₗ(ξ, η, ζ) = ζ * xₗ(ξ, η), we have
+            # 0.5 d/dζ (ζ^2 F(ξ, η)) = ζ F(ξ, η)
+
+            result = (node_coordinates[m, i, j, element] *
+                      jacobian_matrix[l, 1, i, j, element] -
+                      node_coordinates[l, i, j, element] *
+                      jacobian_matrix[m, 1, i, j, element])
+
+            contravariant_vectors[n, 2, i, j, element] = result
+        end
+
+        # Second summand -0.5 * (Xₘ Xₗ_ζ - Xₗ Xₘ_ζ)_ξ
+        @turbo for j in eachnode(basis), i in eachnode(basis)
+            result = zero(eltype(contravariant_vectors))
+
+            for ii in eachnode(basis)
+                # Multiply derivative_matrix to i-dimension to differentiate wrt ξ
+                result += 0.5 * derivative_matrix[i, ii] *
+                          (node_coordinates[m, ii, j, element] *
+                           node_coordinates[l, ii, j, element] -
+                           node_coordinates[l, ii, j, element] *
+                           node_coordinates[m, ii, j, element])
+            end
+
+            contravariant_vectors[n, 2, i, j, element] -= result
+        end
+
+        # Calculate Ja³ₙ = 0.5 * [ (Xₘ Xₗ_η - Xₗ Xₘ_η)_ξ - (Xₘ Xₗ_ξ - Xₗ Xₘ_ξ)_η ]
+
+        # First summand 0.5 * (Xₘ Xₗ_η - Xₗ Xₘ_η)_ξ
+        @turbo for j in eachnode(basis), i in eachnode(basis)
+            result = zero(eltype(contravariant_vectors))
+
+            for ii in eachnode(basis)
+                # Multiply derivative_matrix to i-dimension to differentiate wrt ξ
+                result += 0.5 * derivative_matrix[i, ii] *
+                          (node_coordinates[m, ii, j, element] *
+                           jacobian_matrix[l, 2, ii, j, element] -
+                           node_coordinates[l, ii, j, element] *
+                           jacobian_matrix[m, 2, ii, j, element])
+            end
+
+            contravariant_vectors[n, 3, i, j, element] = result
+        end
+
+        # Second summand -0.5 * (Xₘ Xₗ_ξ - Xₗ Xₘ_ξ)_η
+        @turbo for j in eachnode(basis), i in eachnode(basis)
+            result = zero(eltype(contravariant_vectors))
+
+            for ii in eachnode(basis)
+                # Multiply derivative_matrix to j-dimension to differentiate wrt η
+                result += 0.5 * derivative_matrix[j, ii] *
+                          (node_coordinates[m, i, ii, element] *
+                           jacobian_matrix[l, 1, i, ii, element] -
+                           node_coordinates[l, i, ii, element] *
+                           jacobian_matrix[m, 1, i, ii, element])
+            end
+
+            contravariant_vectors[n, 3, i, j, element] -= result
         end
     end
 
