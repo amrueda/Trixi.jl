@@ -156,8 +156,8 @@ end
 plot!(errors_normals_inf[:,2], yaxis=:log, label = "mimetic", linewidth=2, thickness_scaling = 1) =#
 
 
-plot(3:max_polydeg,errors_sol_inf[3:end,1], xaxis=:log, yaxis=:log, label = "standard", linewidth=2, thickness_scaling = 1)
-plot!(3:max_polydeg,errors_sol_inf[3:end,2], xaxis=:log, yaxis=:log, label = "mimetic", linewidth=2, thickness_scaling = 1)
+plot(3:max_polydeg,errors_normals_inf[3:end,1], xaxis=:log, yaxis=:log, label = "standard", linewidth=2, thickness_scaling = 1)
+plot!(3:max_polydeg,errors_normals_inf[3:end,2], xaxis=:log, yaxis=:log, label = "mimetic", linewidth=2, thickness_scaling = 1)
 #= 
 ###############################################################################
 # ODE solvers, callbacks etc.
