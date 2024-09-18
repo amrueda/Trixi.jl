@@ -78,7 +78,9 @@ function compute_error(solver, semi, cells_per_dimension)
   return error, error_L2 / (8 * prod(cells_per_dimension))
 end
 
-cells_per_dimension = (2,2,2)
+f(x,t,equations::LinearScalarAdvectionEquation3D) = SVector(sin(pi*(x[1]+x[2]+x[3])))
+
+cells_per_dimension = (4,4,4)
 
 max_polydeg = 25
 
@@ -88,7 +90,8 @@ errors_sol_inf = zeros(max_polydeg,3)
 errors_sol_L2 = zeros(max_polydeg,3)
 exact_jacobian = true
 final_time = 1e0
-initial_condition = initial_condition_constant
+initial_condition = f
+
 for polydeg in 1:max_polydeg
   println("Computing polydeg = ", polydeg)
   # Create DG solver with polynomial degree = 3 and (local) Lax-Friedrichs/Rusanov flux as surface flux
@@ -108,7 +111,7 @@ for polydeg in 1:max_polydeg
   ode = semidiscretize(semi, (0.0, final_time));
 
   # The AnalysisCallback allows to analyse the solution in regular intervals and prints the results
-  analysis_callback = AnalysisCallback(semi, interval=100)
+  analysis_callback = AnalysisCallback(semi, interval=100, analysis_polydeg = 50)
 
   # The StepsizeCallback handles the re-calculation of the maximum Δt after each time step
   stepsize_callback = StepsizeCallback(cfl=0.1)
@@ -125,11 +128,12 @@ for polydeg in 1:max_polydeg
               dt=1.0, # solve needs some value here but it will be overwritten by the stepsize_callback
               save_everystep=false, callback=callbacks);
 
+  
   errors = analysis_callback(sol)
 
   errors_sol_L2[polydeg, 1] = errors.l2[1]
   errors_sol_inf[polydeg, 1] = errors.linf[1]
-
+  #=
   # Create curved mesh with 8 x 8 x 8 elements
   mesh = StructuredMesh(cells_per_dimension, mapping; mimetic = true, exact_jacobian = true)
 
@@ -165,8 +169,8 @@ for polydeg in 1:max_polydeg
 
   errors_sol_L2[polydeg, 2] = errors.l2[1]
   errors_sol_inf[polydeg, 2] = errors.linf[1]
-
-  #=
+  =#
+  
  # Create curved mesh with 8 x 8 x 8 elements
  mesh = StructuredMesh(cells_per_dimension, mapping; mimetic = true, exact_jacobian = false)
 
@@ -181,7 +185,7 @@ for polydeg in 1:max_polydeg
  ode = semidiscretize(semi, (0.0, final_time));
 
  # The AnalysisCallback allows to analyse the solution in regular intervals and prints the results
- analysis_callback = AnalysisCallback(semi, interval=100)
+ analysis_callback = AnalysisCallback(semi, interval=100, analysis_polydeg = 50)
 
  # The StepsizeCallback handles the re-calculation of the maximum Δt after each time step
  stepsize_callback = StepsizeCallback(cfl=0.1)
@@ -200,19 +204,18 @@ for polydeg in 1:max_polydeg
 
  errors = analysis_callback(sol)
 
- errors_sol_L2[polydeg, 3] = errors.l2[1]
- errors_sol_inf[polydeg, 3] = errors.linf[1]
- =#
+ errors_sol_L2[polydeg, 2] = errors.l2[1]
+ errors_sol_inf[polydeg, 2] = errors.linf[1]
+ 
 end
-plot(errors_normals_L2[2:end,1], yaxis=:log, ylabel = "discrete L2 norm", xlabel = "polynomial degree", label = "standard", linewidth=2, thickness_scaling = 1)
-plot!(errors_normals_L2[2:end,2], yaxis=:log, ylabel = "discrete L2 norm", xlabel = "polynomial degree", label = "mimetic", linewidth=2, thickness_scaling = 1)
-#plot!(errors_normals_L2[2:end,3], yaxis=:log, label = "interpolated mapping mimetic", linewidth=2, thickness_scaling = 1)
+#plot(errors_normals_L2[2:end,1], yaxis=:log, ylabel = "discrete L2 norm", xlabel = "polynomial degree", label = "standard", linewidth=2, thickness_scaling = 1)
+#plot!(errors_normals_L2[2:end,2], yaxis=:log, ylabel = "discrete L2 norm", xlabel = "polynomial degree", label = "mimetic", linewidth=2, thickness_scaling = 1)
 
-#=
-plot(3:max_polydeg,errors_sol_inf[3:end,1], yaxis=:log, label = "standard", linewidth=2, thickness_scaling = 1)
-plot!(3:max_polydeg,errors_sol_inf[3:end,2], yaxis=:log, label = "mimetic", linewidth=2, thickness_scaling = 1)
-plot!(3:max_polydeg,errors_sol_inf[3:end,3], yaxis=:log, label = "interpolated mapping mimetic", linewidth=2, thickness_scaling = 1)
-=#
+
+plot(3:max_polydeg,errors_sol_L2[3:end,1], yaxis=:log, label = "standard", linewidth=2, thickness_scaling = 1)
+plot!(3:max_polydeg,errors_sol_L2[3:end,2], yaxis=:log, label = "mimetic", linewidth=2, thickness_scaling = 1)
+
+
 #= 
 ###############################################################################
 # ODE solvers, callbacks etc.
