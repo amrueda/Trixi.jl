@@ -57,18 +57,26 @@ function compute_error(solver, semi, cells_per_dimension)
   eta_scale = 1/cells_per_dimension[2]
   zeta_scale = 1/cells_per_dimension[3]
 
+  int_basis = Trixi.LobattoLegendreBasis(50)
+  int_nodes, int_weights = Trixi.gauss_lobatto_nodes_weights(51)
+  vandermonde = Trixi.polynomial_interpolation_matrix(nodes, int_nodes)
+
   for d3 in 1:cells_per_dimension[3]
     for d2 in 1:cells_per_dimension[2]
       for d1 in 1:cells_per_dimension[1]
-        node_coordinates_comp = zeros(3, nnodes(solver.basis))
-        Trixi.calc_node_coordinates_computational!(node_coordinates_comp, d1, d2, d3, semi.mesh, solver.basis)
+        node_coordinates_comp = zeros(3, nnodes(int_basis))
+        Trixi.calc_node_coordinates_computational!(node_coordinates_comp, d1, d2, d3, semi.mesh, int_basis)
         element = linear_indices[d1,d2,d3]
-        for k in eachnode(solver.basis)
-          for j in eachnode(solver.basis)
-            for i in eachnode(solver.basis)
+        înterpolated_metric_values = zeros(3,3,51,51,51)
+        for j in 1:3
+          Trixi.multiply_dimensionwise!(înterpolated_metric_values[j,:,:,:,:], vandermonde, semi.cache.elements.contravariant_vectors[j,:,:,:,:,element])
+        end
+        for k in eachnode(int_basis)
+          for j in eachnode(int_basis)
+            for i in eachnode(int_basis)
               exact_contravariant_vectors!(exact_Ja, node_coordinates_comp[1,i], node_coordinates_comp[2,j], node_coordinates_comp[3,k], xi_scale, eta_scale, zeta_scale)
-              error = max(error, maximum(abs.(semi.cache.elements.contravariant_vectors[:,:,i,j,k,element] - exact_Ja)))
-              error_L2 += norm(semi.cache.elements.contravariant_vectors[:,:,i,j,k,element] - exact_Ja) * weights[i] * weights[j] * weights[k]
+              error = max(error, maximum(abs.(înterpolated_metric_values[:,:,i,j,k] - exact_Ja)))
+              error_L2 += norm(înterpolated_metric_values[:,:,i,j,k] - exact_Ja) * int_weights[i] * int_weights[j] * int_weights[k]
             end
           end
         end
@@ -78,7 +86,7 @@ function compute_error(solver, semi, cells_per_dimension)
   return error, error_L2 / (8 * prod(cells_per_dimension))
 end
 
-f(x,t,equations::LinearScalarAdvectionEquation3D) = SVector(sin(pi*(x[1]+x[2]+x[3])))
+f(x,t,equations::LinearScalarAdvectionEquation3D) = SVector(sin(2*pi*(x[1]+x[2]+x[3])))
 
 cells_per_dimension = (4,4,4)
 
@@ -90,10 +98,11 @@ errors_sol_inf = zeros(max_polydeg,3)
 errors_sol_L2 = zeros(max_polydeg,3)
 exact_jacobian = true
 final_time = 1e0
-initial_condition = f
+initial_condition = initial_condition_constant
 
 for polydeg in 1:max_polydeg
   println("Computing polydeg = ", polydeg)
+  #cells_per_dimension = (cld(50,polydeg),cld(50,polydeg),cld(50,polydeg))
   # Create DG solver with polynomial degree = 3 and (local) Lax-Friedrichs/Rusanov flux as surface flux
   solver = DGSEM(polydeg, flux_lax_friedrichs)
 
@@ -124,7 +133,7 @@ for polydeg in 1:max_polydeg
   # run the simulation
 
   # OrdinaryDiffEq's `solve` method evolves the solution in time and executes the passed callbacks
-  sol = solve(ode, Euler(), #CarpenterKennedy2N54(williamson_condition=false),
+  sol = solve(ode, CarpenterKennedy2N54(williamson_condition=false),
               dt=1.0, # solve needs some value here but it will be overwritten by the stepsize_callback
               save_everystep=false, callback=callbacks);
 
@@ -198,7 +207,7 @@ for polydeg in 1:max_polydeg
  # run the simulation
 
  # OrdinaryDiffEq's `solve` method evolves the solution in time and executes the passed callbacks
- sol = solve(ode, Euler(), #, CarpenterKennedy2N54(williamson_condition=false),
+ sol = solve(ode, CarpenterKennedy2N54(williamson_condition=false),
              dt=1.0, # solve needs some value here but it will be overwritten by the stepsize_callback
              save_everystep=false, callback=callbacks);
 
