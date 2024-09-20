@@ -47,7 +47,7 @@ function exact_contravariant_vectors!(Ja, xi, eta, zeta, dxi, deta, dzeta)
     Ja[3,3] = dxi*deta*(1 + theta_xi + theta_eta)
 end
 
-function compute_error(solver, semi, cells_per_dimension)
+function compute_error(solver, semi, degree, cells_per_dimension)
   @unpack nodes, weights = solver.basis
   exact_Ja = zero(MMatrix{3, 3, Float64})
   error = zero(Float64)
@@ -57,8 +57,8 @@ function compute_error(solver, semi, cells_per_dimension)
   eta_scale = 1/cells_per_dimension[2]
   zeta_scale = 1/cells_per_dimension[3]
 
-  int_basis = Trixi.LobattoLegendreBasis(50)
-  int_nodes, int_weights = Trixi.gauss_lobatto_nodes_weights(51)
+  int_basis = Trixi.LobattoLegendreBasis(degree)
+  int_nodes, int_weights = Trixi.gauss_lobatto_nodes_weights(degree+1)
   vandermonde = Trixi.polynomial_interpolation_matrix(nodes, int_nodes)
 
   for d3 in 1:cells_per_dimension[3]
@@ -67,16 +67,16 @@ function compute_error(solver, semi, cells_per_dimension)
         node_coordinates_comp = zeros(3, nnodes(int_basis))
         Trixi.calc_node_coordinates_computational!(node_coordinates_comp, d1, d2, d3, semi.mesh, int_basis)
         element = linear_indices[d1,d2,d3]
-        înterpolated_metric_values = zeros(3,3,51,51,51)
+        interpolated_metric_values = zeros(3,3,degree+1,degree+1,degree+1)
         for j in 1:3
-          Trixi.multiply_dimensionwise!(înterpolated_metric_values[j,:,:,:,:], vandermonde, semi.cache.elements.contravariant_vectors[j,:,:,:,:,element])
+          Trixi.multiply_dimensionwise!(view(interpolated_metric_values,j,:,:,:,:), vandermonde, view(semi.cache.elements.contravariant_vectors,j,:,:,:,:,element))
         end
         for k in eachnode(int_basis)
           for j in eachnode(int_basis)
             for i in eachnode(int_basis)
               exact_contravariant_vectors!(exact_Ja, node_coordinates_comp[1,i], node_coordinates_comp[2,j], node_coordinates_comp[3,k], xi_scale, eta_scale, zeta_scale)
-              error = max(error, maximum(abs.(înterpolated_metric_values[:,:,i,j,k] - exact_Ja)))
-              error_L2 += norm(înterpolated_metric_values[:,:,i,j,k] - exact_Ja) * int_weights[i] * int_weights[j] * int_weights[k]
+              error = max(error, maximum(abs.(interpolated_metric_values[:,:,i,j,k] - exact_Ja)))
+              error_L2 += norm(interpolated_metric_values[:,:,i,j,k] - exact_Ja) * int_weights[i] * int_weights[j] * int_weights[k]
             end
           end
         end
@@ -86,9 +86,9 @@ function compute_error(solver, semi, cells_per_dimension)
   return error, error_L2 / (8 * prod(cells_per_dimension))
 end
 
-f(x,t,equations::LinearScalarAdvectionEquation3D) = SVector(sin(2*pi*(x[1]+x[2]+x[3])))
+f(x,t,equations::LinearScalarAdvectionEquation3D) = SVector(sin(pi*(x[1]+x[2]+x[3])))
 
-cells_per_dimension = (4,4,4)
+cells_per_dimension = (2,2,2)
 
 max_polydeg = 25
 
@@ -102,7 +102,7 @@ initial_condition = initial_condition_constant
 
 for polydeg in 1:max_polydeg
   println("Computing polydeg = ", polydeg)
-  #cells_per_dimension = (cld(50,polydeg),cld(50,polydeg),cld(50,polydeg))
+
   # Create DG solver with polynomial degree = 3 and (local) Lax-Friedrichs/Rusanov flux as surface flux
   solver = DGSEM(polydeg, flux_lax_friedrichs)
 
@@ -112,7 +112,7 @@ for polydeg in 1:max_polydeg
   # A semidiscre  tization collects data structures and functions for the spatial discretization
   semi = SemidiscretizationHyperbolic(mesh, equations, initial_condition, solver)
 
-  error_inf, error_L2 = compute_error(solver, semi, cells_per_dimension)
+  error_inf, error_L2 = compute_error(solver, semi, 50, cells_per_dimension)
   errors_normals_inf[polydeg,1] = error_inf
   errors_normals_L2[polydeg,1] = error_L2
 
@@ -186,9 +186,9 @@ for polydeg in 1:max_polydeg
  # A semidiscretization collects data structures and functions for the spatial discretization
  semi = SemidiscretizationHyperbolic(mesh, equations, initial_condition, solver)
 
- error_inf, error_L2 = compute_error(solver, semi, cells_per_dimension)
- errors_normals_inf[polydeg,3] = error_inf
- errors_normals_L2[polydeg,3] = error_L2
+ error_inf, error_L2 = compute_error(solver, semi, 50, cells_per_dimension)
+ errors_normals_inf[polydeg,2] = error_inf
+ errors_normals_L2[polydeg,2] = error_L2
 
  # Create ODE problem with time span from 0.0 to 1.0
  ode = semidiscretize(semi, (0.0, final_time));
