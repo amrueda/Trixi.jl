@@ -86,8 +86,6 @@ function compute_error(solver, semi, degree, cells_per_dimension)
   return error, error_L2 / (8 * prod(cells_per_dimension))
 end
 
-f(x,t,equations::LinearScalarAdvectionEquation3D) = SVector(sin(pi*(x[1]+x[2]+x[3])))
-
 cells_per_dimension = (2,2,2)
 
 max_polydeg = 25
