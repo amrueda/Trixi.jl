@@ -1718,9 +1718,9 @@ end
             delta_entProd = dot(delta_v, antidiffusive_flux_local)
 
             alpha = 1 # Initialize alpha for plotting
-            if (entProd_FV + delta_entProd > 0.0) && (delta_entProd != 0.0)
+            if (entProd_FV - delta_entProd > 0.0) && (delta_entProd != 0.0)
                 alpha = min(1.0,
-                            (abs(entProd_FV) + eps()) / (abs(delta_entProd) + eps()))
+                            (entProd_FV + eps()) / (delta_entProd + eps()))
                 for v in eachvariable(equations)
                     antidiffusive_flux1_L[v, i, j, element] = alpha *
                                                               antidiffusive_flux1_L[v,
@@ -1766,9 +1766,9 @@ end
             delta_entProd = dot(delta_v, antidiffusive_flux_local)
 
             alpha = 1 # Initialize alpha for plotting
-            if (entProd_FV + delta_entProd > 0.0) && (delta_entProd != 0.0)
+            if (entProd_FV - delta_entProd > 0.0) && (delta_entProd != 0.0)
                 alpha = min(1.0,
-                            (abs(entProd_FV) + eps()) / (abs(delta_entProd) + eps()))
+                            (entProd_FV + eps()) / (delta_entProd + eps()))
                 for v in eachvariable(equations)
                     antidiffusive_flux2_L[v, i, j, element] = alpha *
                                                               antidiffusive_flux2_L[v,
