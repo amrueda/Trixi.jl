@@ -1698,24 +1698,44 @@ end
             u_local = get_node_vars(u, equations, dg, i, j, element)
             u_local_m1 = get_node_vars(u, equations, dg, i - 1, j, element)
 
+            # The following explanations are based on the paper https://doi.org/10.48550/arXiv.2303.00374.
+
             # Using mathematic entropy
+            # entropy variables = v
             v_local = cons2entropy(u_local, equations)
             v_local_m1 = cons2entropy(u_local_m1, equations)
 
+            # entropy flux = f^S = vS = v_1 * entropy (first dimension)
             q_local = u_local[2] / u_local[1] * entropy(u_local, equations)
             q_local_m1 = u_local_m1[2] / u_local_m1[1] * entropy(u_local_m1, equations)
 
+            # f^a
             f_local = flux(u_local, 1, equations)
             f_local_m1 = flux(u_local_m1, 1, equations)
 
+            # psi = entropy-flux potential = v^T f^a - f^S
             psi_local = dot(v_local, f_local) - q_local
             psi_local_m1 = dot(v_local_m1, f_local_m1) - q_local_m1
 
+            # jumps in entropy variables (v) and entropy-flux potential (psi)
             delta_v = v_local - v_local_m1
             delta_psi = psi_local - psi_local_m1
 
+            # Compute alpha such that Tadmor's shuffle condition is fulfilled:
+            # delta_v^T f^hat <= delta_psi
+            # with f_hat = f_FV - alpha * antidiffusive_flux
+            # We get the minus since our fluxes are oriented in positive direction (right/top); j=i+1.
+            # Therefore, the factor in the paper is -1.
+
+            # Then, delta_v^T f_FV - alpha * delta_v^T * antidiffusive_flux <= delta_psi
+            # <=> entProd_FV - alpha * delta_entProd <= 0
             entProd_FV = dot(delta_v, view(fstar1, :, i, j)) - delta_psi
             delta_entProd = dot(delta_v, antidiffusive_flux_local)
+
+            # PI = delta_v^T (f_FV - antidiffusive_flux) = entProd_FV + delta_psi - delta_entProd
+
+            # Then, if condition in alpha formulation:
+            # PI > delta_psi <=> entProd_FV - delta_entProd > 0
 
             alpha = 1 # Initialize alpha for plotting
             if (entProd_FV - delta_entProd > 0.0) && (delta_entProd != 0.0)
