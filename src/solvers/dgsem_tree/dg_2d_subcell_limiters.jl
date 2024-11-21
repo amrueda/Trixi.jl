@@ -1724,10 +1724,13 @@ end
             # Compute alpha such that Tadmor's shuffle condition is fulfilled:
             # delta_v^T f^hat <= delta_psi
             # with f_hat = f_FV - alpha * antidiffusive_flux
-            # We get the minus since our fluxes are oriented in positive direction (right/top); j=i+1.
-            # Therefore, the factor in the paper is -1.
 
-            # Then, delta_v^T f_FV - alpha * delta_v^T * antidiffusive_flux <= delta_psi
+            # Notes about the sign: Normally, the fluxes are oriented left-to-right (e.g., the f_FV).
+            # However, in MCL, the antidiffusive flux is already flipped with a minus and therefore right-to-left.
+            # So, we get a minus in front of the alpha to make both fluxes left-to-right.
+            # The additional factor (i-j) directly cancels out due to the definition of the antidiffusive flux in the paper.
+
+            # Then, we need: delta_v^T f_FV - alpha * delta_v^T * antidiffusive_flux <= delta_psi
             # <=> entProd_FV - alpha * delta_entProd <= 0
             entProd_FV = dot(delta_v, view(fstar1, :, i, j)) - delta_psi
             delta_entProd = dot(delta_v, antidiffusive_flux_local)
