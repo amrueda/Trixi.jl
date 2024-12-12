@@ -186,7 +186,7 @@ end
         v3 = rho_v3 / rho
         v_mag = sqrt(v1^2 + v2^2 + v3^2)
         gamma = equations.gammas[k]
-        p[k] = (gamma - 1) * (rho_e - 0.5 * rho * v_mag^2 - 0.5 * (B1^2 + B2^2 + B3^2))
+        p[k] = (gamma - 1) * (rho_e - 0.5f0 * rho * v_mag^2 - 0.5f0 * (B1^2 + B2^2 + B3^2))
     end
     return SVector{ncomponents(equations), real(equations)}(p)
 end
@@ -208,7 +208,7 @@ end
         gamma = equations.gammas[k]
 
         p = (gamma - 1) *
-            (rho_e - 0.5 * rho * v_mag^2 - 0.5 * (B1^2 + B2^2 + B3^2) - 0.5 * psi^2)
+            (rho_e - 0.5f0 * rho * v_mag^2 - 0.5f0 * (B1^2 + B2^2 + B3^2) - 0.5f0 * psi^2)
 
         rho_total += rho
         p_total += p
@@ -466,5 +466,169 @@ end
     end
 
     return dissipation
+end
+
+"""
+    source_terms_collision_ion_ion(u, x, t,
+                                   equations::AbstractIdealGlmMhdMultiIonEquations)
+
+Ion-ion collision source terms, cf. Rueda-Ramirez et al. (2023) and Rubin et al. (2015)
+"""
+function source_terms_collision_ion_ion(u, x, t,
+                                        equations::AbstractIdealGlmMhdMultiIonEquations)
+    S_std = source_terms_standard(u, x, t, equations)
+
+    s = zero(MVector{nvariables(equations), eltype(u)})
+    @unpack gammas, gas_constants, molar_masses, collision_frequency = equations
+
+    prim = cons2prim(u, equations)
+
+    for k in eachcomponent(equations)
+        rho_k, v1_k, v2_k, v3_k, p_k = get_component(k, prim, equations)
+        T_k = p_k / (rho_k * gas_constants[k])
+
+        S_q1 = 0
+        S_q2 = 0
+        S_q3 = 0
+        S_E = 0
+        for l in eachcomponent(equations)
+            # Skip computation for same species
+            l == k && continue
+
+            rho_l, v1_l, v2_l, v3_l, p_l = get_component(l, prim, equations)
+            T_l = p_l / (rho_l * gas_constants[l])
+
+            # Reduced temperature (without scaling with molar mass)
+            T_kl = (molar_masses[l] * T_k + molar_masses[k] * T_l)
+
+            delta_v2 = (v1_l - v1_k)^2 + (v2_l - v2_k)^2 + (v3_l - v3_k)^2
+
+            # Scale T_kl with molar mass
+            T_kl /= (molar_masses[k] + molar_masses[l])
+
+            # Compute effective collision frequency
+            v_kl = (collision_frequency * (rho_l * molar_masses[1] / molar_masses[l]) /
+                    T_kl^(3 / 2))
+
+            # Correct the collision frequency with the drifting effect (NEW - Rambo & Denavit, Rambo & Procassini)
+            z2 = delta_v2 / (p_l / rho_l + p_k / rho_k)
+            v_kl /= (1 + (2 / (9 * pi))^(1 / 3) * z2)^(3/2)
+
+            S_q1 += rho_k * v_kl * (v1_l - v1_k)
+            S_q2 += rho_k * v_kl * (v2_l - v2_k)
+            S_q3 += rho_k * v_kl * (v3_l - v3_k)
+
+            S_E += (3 * molar_masses[1] * gas_constants[1] * (T_l - T_k)
+                    +
+                    molar_masses[l] * delta_v2) * v_kl * rho_k /
+                   (molar_masses[k] + molar_masses[l])
+        end
+
+        S_E += (v1_k * S_q1 + v2_k * S_q2 + v3_k * S_q3)
+
+        set_component!(s, k, 0, S_q1, S_q2, S_q3, S_E, equations)
+    end
+    return SVector{nvariables(equations), real(equations)}(S_std .+ s)
+end
+
+"""
+    source_terms_collision_ion_electron(u, x, t,
+                                        equations::AbstractIdealGlmMhdMultiIonEquations)
+
+Ion-electron collision source terms, cf. Rueda-Ramirez et al. (2023) and Rubin et al. (2015)
+Here we assume v_e = v⁺ (no effect of currents on the electron velocity)
+"""
+function source_terms_collision_ion_electron(u, x, t,
+                                             equations::AbstractIdealGlmMhdMultiIonEquations)
+    s = zero(MVector{nvariables(equations), eltype(u)})
+    @unpack gammas, gas_constants, molar_masses, ion_electron_collision_constants, electron_temperature = equations
+
+    prim = cons2prim(u, equations)
+    T_e = electron_temperature(u, equations)
+    T_e32 = T_e^(3 / 2)
+
+    v1_plus, v2_plus, v3_plus, vk1_plus, vk2_plus, vk3_plus, total_electron_charge = charge_averaged_velocities(u,
+                                                                                                                equations)
+
+    for k in eachcomponent(equations)
+        rho_k, v1_k, v2_k, v3_k, p_k = get_component(k, prim, equations)
+        T_k = p_k / (rho_k * gas_constants[k])
+
+        # Compute effective collision frequency
+        v_ke = ion_electron_collision_constants[k] * total_electron_charge / T_e32
+
+        S_q1 = rho_k * v_ke * (v1_plus - v1_k)
+        S_q2 = rho_k * v_ke * (v2_plus - v2_k)
+        S_q3 = rho_k * v_ke * (v3_plus - v3_k)
+
+        S_E = 3 * molar_masses[1] * gas_constants[1] * (T_e - T_k) * v_ke * rho_k /
+              molar_masses[k]
+
+        S_E += (v1_k * S_q1 + v2_k * S_q2 + v3_k * S_q3)
+
+        set_component!(s, k, 0, S_q1, S_q2, S_q3, S_E, equations)
+    end
+    return SVector{nvariables(equations), real(equations)}(s)
+end
+
+"""
+    function source_terms_collision_ion_electron_ohm(u, x, t,
+                                                     equations::AbstractIdealGlmMhdMultiIonEquations)
+
+Ion-electron collision source terms, including the effect on Ohm's law, cf. Rueda-Ramirez et al. (2023) and Rubin et al. (2015)
+Here we assume v_e = v⁺ (no effect of currents on the electron velocity)
+"""
+function source_terms_collision_ion_electron_ohm(u, x, t,
+                                                 equations::AbstractIdealGlmMhdMultiIonEquations)
+    s = zero(MVector{nvariables(equations), eltype(u)})
+    @unpack gammas, gas_constants, charge_to_mass, molar_masses, ion_electron_collision_constants, electron_temperature = equations
+
+    prim = cons2prim(u, equations)
+    T_e = electron_temperature(u, equations)
+    T_e32 = T_e^(3 / 2)
+
+    v1_plus, v2_plus, v3_plus, vk1_plus, vk2_plus, vk3_plus, total_electron_charge = charge_averaged_velocities(u,
+                                                                                                                equations)
+
+    Se_q1 = 0
+    Se_q2 = 0
+    Se_q3 = 0
+
+    for k in eachcomponent(equations)
+        rho_k, v1_k, v2_k, v3_k, p_k = get_component(k, prim, equations)
+        T_k = p_k / (rho_k * gas_constants[k])
+
+        # Compute effective collision frequency
+        v_ke = ion_electron_collision_constants[k] * total_electron_charge / T_e32
+
+        S_q1 = rho_k * v_ke * (v1_plus - v1_k)
+        S_q2 = rho_k * v_ke * (v2_plus - v2_k)
+        S_q3 = rho_k * v_ke * (v3_plus - v3_k)
+        Se_q1 -= S_q1
+        Se_q2 -= S_q2
+        Se_q3 -= S_q3
+
+        S_E = 3 * molar_masses[1] * gas_constants[1] * (T_e - T_k) * v_ke * rho_k /
+              molar_masses[k]
+
+        S_E += (v1_k * S_q1 + v2_k * S_q2 + v3_k * S_q3)
+
+        set_component!(s, k, 0, S_q1, S_q2, S_q3, S_E, equations)
+    end
+
+    s_ohm = zero(MVector{nvariables(equations), eltype(u)})
+    for k in eachcomponent(equations)
+        rho_k, v1_k, v2_k, v3_k, _ = get_component(k, prim, equations)
+
+        S_q1 = rho_k * charge_to_mass[k] * Se_q1 / total_electron_charge
+        S_q2 = rho_k * charge_to_mass[k] * Se_q2 / total_electron_charge
+        S_q3 = rho_k * charge_to_mass[k] * Se_q3 / total_electron_charge
+
+        S_E = (v1_k * S_q1 + v2_k * S_q2 + v3_k * S_q3)
+
+        set_component!(s_ohm, k, 0, S_q1, S_q2, S_q3, S_E, equations)
+    end
+
+    return SVector{nvariables(equations), real(equations)}(s + s_ohm)
 end
 end
