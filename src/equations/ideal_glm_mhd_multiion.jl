@@ -186,7 +186,8 @@ end
         v3 = rho_v3 / rho
         v_mag = sqrt(v1^2 + v2^2 + v3^2)
         gamma = equations.gammas[k]
-        p[k] = (gamma - 1) * (rho_e - 0.5f0 * rho * v_mag^2 - 0.5f0 * (B1^2 + B2^2 + B3^2))
+        p[k] = (gamma - 1) *
+               (rho_e - 0.5f0 * rho * v_mag^2 - 0.5f0 * (B1^2 + B2^2 + B3^2))
     end
     return SVector{ncomponents(equations), real(equations)}(p)
 end
@@ -208,7 +209,8 @@ end
         gamma = equations.gammas[k]
 
         p = (gamma - 1) *
-            (rho_e - 0.5f0 * rho * v_mag^2 - 0.5f0 * (B1^2 + B2^2 + B3^2) - 0.5f0 * psi^2)
+            (rho_e - 0.5f0 * rho * v_mag^2 - 0.5f0 * (B1^2 + B2^2 + B3^2) -
+             0.5f0 * psi^2)
 
         rho_total += rho
         p_total += p
@@ -512,7 +514,7 @@ function source_terms_collision_ion_ion(u, x, t,
 
             # Correct the collision frequency with the drifting effect (NEW - Rambo & Denavit, Rambo & Procassini)
             z2 = delta_v2 / (p_l / rho_l + p_k / rho_k)
-            v_kl /= (1 + (2 / (9 * pi))^(1 / 3) * z2)^(3/2)
+            v_kl /= (1 + (2 / (9 * pi))^(1 / 3) * z2)^(3 / 2)
 
             S_q1 += rho_k * v_kl * (v1_l - v1_k)
             S_q2 += rho_k * v_kl * (v2_l - v2_k)
