@@ -4,13 +4,14 @@
 [![Docs-dev](https://img.shields.io/badge/docs-dev-blue.svg)](https://trixi-framework.github.io/Trixi.jl/dev)
 [![Slack](https://img.shields.io/badge/chat-slack-e01e5a)](https://join.slack.com/t/trixi-framework/shared_invite/zt-sgkc6ppw-6OXJqZAD5SPjBYqLd8MU~g)
 [![Youtube](https://img.shields.io/youtube/channel/views/UCpd92vU2HjjTPup-AIN0pkg?style=social)](https://www.youtube.com/@trixi-framework)
-[![Build Status](https://github.com/trixi-framework/Trixi.jl/workflows/CI/badge.svg)](https://github.com/trixi-framework/Trixi.jl/actions?query=workflow%3ACI)
+[![Build Status](https://github.com/trixi-framework/Trixi.jl/actions/workflows/ci.yml/badge.svg)](https://github.com/trixi-framework/Trixi.jl/actions?query=workflow%3ACI)
 [![Codecov](https://codecov.io/gh/trixi-framework/Trixi.jl/branch/main/graph/badge.svg)](https://codecov.io/gh/trixi-framework/Trixi.jl)
 [![Coveralls](https://coveralls.io/repos/github/trixi-framework/Trixi.jl/badge.svg?branch=main)](https://coveralls.io/github/trixi-framework/Trixi.jl?branch=main)
 [![Aqua QA](https://raw.githubusercontent.com/JuliaTesting/Aqua.jl/master/badge.svg)](https://github.com/JuliaTesting/Aqua.jl)
 [![License: MIT](https://img.shields.io/badge/License-MIT-success.svg)](https://opensource.org/licenses/MIT)
 [![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.3996439.svg)](https://doi.org/10.5281/zenodo.3996439)
-[![Downloads](https://shields.io/endpoint?url=https://pkgs.genieframework.com/api/v1/badge/Trixi)](https://pkgs.genieframework.com?packages=Trixi)
+[![OpenSSF Best Practices](https://www.bestpractices.dev/projects/8695/badge)](https://www.bestpractices.dev/projects/8695)
+<!-- [![Downloads](https://shields.io/endpoint?url=https://pkgs.genieframework.com/api/v1/badge/Trixi)](https://pkgs.genieframework.com?packages=Trixi) -->
 <!-- [![GitHub commits since tagged version](https://img.shields.io/github/commits-since/trixi-framework/Trixi.jl/v0.3.43.svg?style=social&logo=github)](https://github.com/trixi-framework/Trixi.jl) -->
 <!-- [![PkgEval](https://juliaci.github.io/NanosoldierReports/pkgeval_badges/T/Trixi.svg)](https://juliaci.github.io/NanosoldierReports/pkgeval_badges/report.html) -->
 
@@ -18,7 +19,7 @@
   <img width="300px" src="https://trixi-framework.github.io/assets/logo.png">
 </p>
 
-**Trixi.jl** is a numerical simulation framework for hyperbolic conservation
+**Trixi.jl** is a numerical simulation framework for conservation
 laws written in [Julia](https://julialang.org). A key objective for the
 framework is to be useful to both scientists and students. Therefore, next to
 having an extensible design with a fast implementation, Trixi.jl is
@@ -32,11 +33,15 @@ installation and postprocessing procedures. Its features include:
   * Hierarchical quadtree/octree grid with adaptive mesh refinement
   * Forests of quadtrees/octrees with [p4est](https://github.com/cburstedde/p4est) via [P4est.jl](https://github.com/trixi-framework/P4est.jl)
 * High-order accuracy in space and time
+  * Arbitrary floating-point precision
 * Discontinuous Galerkin methods
   * Kinetic energy-preserving and entropy-stable methods based on flux differencing
   * Entropy-stable shock capturing
-  * Positivity-preserving limiting
   * [Finite difference summation by parts (SBP) methods](https://github.com/ranocha/SummationByPartsOperators.jl)
+* Advanced limiting strategies
+  * Positivity-preserving limiting
+  * Subcell invariant domain-preserving (IDP) limiting
+  * Entropy-bounded limiting
 * Compatible with the [SciML ecosystem for ordinary differential equations](https://diffeq.sciml.ai/latest/)
   * [Explicit low-storage Runge-Kutta time integration](https://diffeq.sciml.ai/latest/solvers/ode_solve/#Low-Storage-Methods)
   * [Strong stability preserving methods](https://diffeq.sciml.ai/latest/solvers/ode_solve/#Explicit-Strong-Stability-Preserving-Runge-Kutta-Methods-for-Hyperbolic-PDEs-(Conservation-Laws))
@@ -46,16 +51,18 @@ installation and postprocessing procedures. Its features include:
 * Periodic and weakly-enforced boundary conditions
 * Multiple governing equations:
   * Compressible Euler equations
+  * Compressible Navier-Stokes equations
   * Magnetohydrodynamics (MHD) equations
   * Multi-component compressible Euler and MHD equations
   * Linearized Euler and acoustic perturbation equations
   * Hyperbolic diffusion equations for elliptic problems
   * Lattice-Boltzmann equations (D2Q9 and D3Q27 schemes)
   * Shallow water equations
-  * Several scalar conservation laws (e.g., linear advection, Burgers' equation)
+  * Several scalar conservation laws (e.g., linear advection, Burgers' equation, LWR traffic flow)
 * Multi-physics simulations
   * [Self-gravitating gas dynamics](https://github.com/trixi-framework/paper-self-gravitating-gas-dynamics)
 * Shared-memory parallelization via multithreading
+* Multi-node parallelization via MPI
 * Visualization and postprocessing of the results
   * In-situ and a posteriori visualization with [Plots.jl](https://github.com/JuliaPlots/Plots.jl)
   * Interactive visualization with [Makie.jl](https://makie.juliaplots.org/)
@@ -234,8 +241,8 @@ In addition, you can also refer to Trixi.jl directly as
 
 ## Authors
 Trixi.jl was initiated by [Michael
-Schlottke-Lakemper](https://lakemper.eu)
-(RWTH Aachen University/High-Performance Computing Center Stuttgart (HLRS), Germany) and
+Schlottke-Lakemper](https://www.uni-augsburg.de/fakultaet/mntf/math/prof/hpsc)
+(University of Augsburg, Germany) and
 [Gregor Gassner](https://www.mi.uni-koeln.de/NumSim/gregor-gassner)
 (University of Cologne, Germany). Together with [Hendrik Ranocha](https://ranocha.de)
 (Johannes Gutenberg University Mainz, Germany), [Andrew Winters](https://liu.se/en/employee/andwi94)
@@ -253,6 +260,25 @@ of our community to adhere to our [`CODE_OF_CONDUCT.md`](CODE_OF_CONDUCT.md).
 To get in touch with the developers,
 [join us on Slack](https://join.slack.com/t/trixi-framework/shared_invite/zt-sgkc6ppw-6OXJqZAD5SPjBYqLd8MU~g)
 or [create an issue](https://github.com/trixi-framework/Trixi.jl/issues/new).
+
+## Participating research groups
+Participating research groups in alphabetical order:
+
+[Applied and Computational Mathematics, RWTH Aachen University :de:](https://www.acom.rwth-aachen.de)
+
+[Applied Mathematics, Department of Mathematics, University of Hamburg :de:](https://www.math.uni-hamburg.de/en/forschung/bereiche/am.html)
+
+[Division of Applied Mathematics, Department of Mathematics, Linköping University :sweden:](https://liu.se/en/employee/andwi94)
+
+[Computational and Applied Mathematics, Rice University :us:](https://jlchan.github.io/)
+
+[High-Performance Computing, Institute of Software Technology, German Aerospace Center (DLR) :de:](https://www.dlr.de/en/sc/about-us/departments/high-performance-computing)
+
+[High-Performance Scientific Computing, University of Augsburg :de:](https://hpsc.math.uni-augsburg.de)
+
+[Numerical Mathematics, Institute of Mathematics, Johannes Gutenberg University Mainz :de:](https://ranocha.de)
+
+[Numerical Simulation, Department of Mathematics and Computer Science, University of Cologne :de:](https://www.mi.uni-koeln.de/NumSim/)
 
 
 ## Acknowledgments
@@ -272,7 +298,7 @@ Forschungsgemeinschaft](https://www.dfg.de/) (DFG, German Research Foundation)
 through the following grants:
 * Excellence Strategy EXC 2044-390685587, Mathematics Münster: Dynamics-Geometry-Structure.
 * Research unit FOR 5409 "Structure-Preserving Numerical Methods for Bulk- and
-  Interface Coupling of Heterogeneous Models (SNuBIC)" (project number 463312734).
+  Interface Coupling of Heterogeneous Models ([SNuBIC](https://www.snubic.io))" (project number 463312734).
 * Individual grant no. 528753982.
 
 This project has benefited from funding from the [European Research Council](https://erc.europa.eu)

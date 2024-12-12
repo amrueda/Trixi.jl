@@ -92,8 +92,7 @@ coverage = occursin("--code-coverage", cmd) && !occursin("--code-coverage=none",
         # the convergence test logic
         @test_nowarn_mod convergence_test(@__MODULE__,
                                           joinpath(EXAMPLES_DIR, "tree_2d_dgsem",
-                                                   "elixir_advection_basic.jl"), 2,
-                                          tspan = (0.0, 0.01))
+                                                   "elixir_advection_basic.jl"), 2)
         @test_nowarn_mod convergence_test(@__MODULE__,
                                           joinpath(EXAMPLES_DIR, "tree_2d_dgsem",
                                                    "elixir_advection_extended.jl"), 2,
@@ -101,12 +100,10 @@ coverage = occursin("--code-coverage", cmd) && !occursin("--code-coverage=none",
                                           tspan = (0.0, 0.1))
         @test_nowarn_mod convergence_test(@__MODULE__,
                                           joinpath(EXAMPLES_DIR, "structured_2d_dgsem",
-                                                   "elixir_advection_basic.jl"), 2,
-                                          tspan = (0.0, 0.01))
+                                                   "elixir_advection_basic.jl"), 2)
         @test_nowarn_mod convergence_test(@__MODULE__,
                                           joinpath(EXAMPLES_DIR, "structured_2d_dgsem",
-                                                   "elixir_advection_coupled.jl"), 2,
-                                          tspan = (0.0, 0.01))
+                                                   "elixir_advection_coupled.jl"), 2)
         @test_nowarn_mod convergence_test(@__MODULE__,
                                           joinpath(EXAMPLES_DIR, "structured_2d_dgsem",
                                                    "elixir_advection_extended.jl"), 2,
@@ -203,7 +200,8 @@ end
                              volume_integral = VolumeIntegralWeakForm())
 
             # DGMultiMesh is on [-1, 1]^ndims by default
-            mesh = DGMultiMesh(solver, cells_per_dimension = (2, 2),
+            cells_per_dimension = (2, 2)
+            mesh = DGMultiMesh(solver, cells_per_dimension,
                                periodicity = (true, true))
 
             semi = SemidiscretizationHyperbolic(mesh, equations, initial_condition,
@@ -225,7 +223,8 @@ end
                              volume_integral = VolumeIntegralFluxDifferencing(flux_central))
 
             # DGMultiMesh is on [-1, 1]^ndims by default
-            mesh = DGMultiMesh(solver, cells_per_dimension = (2, 2),
+            cells_per_dimension = (2, 2)
+            mesh = DGMultiMesh(solver, cells_per_dimension,
                                periodicity = (true, true))
 
             semi = SemidiscretizationHyperbolic(mesh, equations, initial_condition,
@@ -254,6 +253,17 @@ end
                                "elixir_mhd_alfven_wave.jl"),
                       tspan = (0.0, 0.0), initial_refinement_level = 0)
         @test_nowarn jacobian_ad_forward(semi)
+    end
+
+    @timed_testset "EulerGravity" begin
+        trixi_include(@__MODULE__,
+                      joinpath(EXAMPLES_DIR,
+                               "paper_self_gravitating_gas_dynamics",
+                               "elixir_eulergravity_convergence.jl"),
+                      tspan = (0.0, 0.0), initial_refinement_level = 1)
+        J = jacobian_ad_forward(semi)
+        λ = eigvals(J)
+        @test maximum(real, λ) < 1.5
     end
 end
 
@@ -287,7 +297,8 @@ end
             equations = CompressibleEulerEquations1D(1.4)
             mesh = TreeMesh((-1.0,), (1.0,), initial_refinement_level = 3,
                             n_cells_max = 10^4)
-            solver = DGSEM(3, flux_hll, VolumeIntegralFluxDifferencing(flux_ranocha))
+            solver = DGSEM(3, FluxHLL(min_max_speed_naive),
+                           VolumeIntegralFluxDifferencing(flux_ranocha))
             initial_condition = (x, t, equations) -> begin
                 rho = 2 + sinpi(k * sum(x))
                 v1 = 0.1
@@ -343,8 +354,8 @@ end
     end
 
     @timed_testset "elixir_euler_ad.jl" begin
-        @test_trixi_include(joinpath(examples_dir(), "special_elixirs",
-                                     "elixir_euler_ad.jl"))
+        @test_nowarn_mod trixi_include(joinpath(examples_dir(), "special_elixirs",
+                                                "elixir_euler_ad.jl"))
     end
 end
 end

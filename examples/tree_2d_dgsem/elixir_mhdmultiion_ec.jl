@@ -3,18 +3,26 @@ using OrdinaryDiffEq
 using Trixi
 
 ###############################################################################
-# semidiscretization of the ideal MHD equations
-equations = IdealMhdMultiIonEquations2D(gammas = (2.0, 2.0),
-                                        charge_to_mass = (1.0, 1.0),
-                                        gas_constants = (1.0, 1.0),
-                                        molar_masses = (1.0, 1.0),
-                                        collision_frequency = 1.0,
-                                        ion_electron_collision_constants = (1.0, 1.0))
+# semidiscretization of the ideal multi-ion MHD equations
+# TODO: remove un-needed parameters and add test for collisions
+equations = IdealGlmMhdMultiIonEquations2D(gammas = (1.4, 1.667),
+                                           charge_to_mass = (1.0, 2.0),
+                                           gas_constants = (1.0, 1.0),
+                                           molar_masses = (1.0, 1.0),
+                                           collision_frequency = 1.0,
+                                           ion_electron_collision_constants = (1.0, 1.0))
 
 initial_condition = initial_condition_weak_blast_wave
 
+# Entropy conservative numerical fluxes
 volume_flux = (flux_ruedaramirez_etal, flux_nonconservative_ruedaramirez_etal)
 surface_flux = (flux_ruedaramirez_etal, flux_nonconservative_ruedaramirez_etal)
+# For provably entropy-stable surface fluxes, use
+# surface_flux = (FluxPlusDissipation(flux_ruedaramirez_etal, DissipationEntropyStable()), 
+#                 flux_nonconservative_ruedaramirez_etal)
+# For a standard local lax-friedrichs surface flux, use
+# surface_flux = (flux_lax_friedrichs, flux_nonconservative_central)
+
 solver = DGSEM(polydeg = 3, surface_flux = surface_flux,
                volume_integral = VolumeIntegralFluxDifferencing(volume_flux))
 
@@ -25,7 +33,7 @@ mesh = TreeMesh(coordinates_min, coordinates_max,
                 n_cells_max = 10_000)
 
 semi = SemidiscretizationHyperbolic(mesh, equations, initial_condition, solver,
-                                    source_terms = source_terms_standard)
+                                    source_terms = source_terms_lorentz)
 
 ###############################################################################
 # ODE solvers, callbacks etc.
@@ -35,7 +43,7 @@ ode = semidiscretize(semi, tspan)
 
 summary_callback = SummaryCallback()
 
-analysis_interval = 100
+analysis_interval = 10
 analysis_callback = AnalysisCallback(semi, interval = analysis_interval)
 alive_callback = AliveCallback(analysis_interval = analysis_interval)
 
@@ -44,12 +52,17 @@ save_solution = SaveSolutionCallback(dt = 0.1, # interval=100,
                                      save_final_solution = true,
                                      solution_variables = cons2prim)
 
-stepsize_callback = StepsizeCallback(cfl = 0.5)
+cfl = 0.5
+
+stepsize_callback = StepsizeCallback(cfl = cfl)
+
+glm_speed_callback = GlmSpeedCallback(glm_scale = 0.5, cfl = cfl)
 
 callbacks = CallbackSet(summary_callback,
                         analysis_callback, alive_callback,
                         save_solution,
-                        stepsize_callback)
+                        stepsize_callback,
+                        glm_speed_callback)
 
 ###############################################################################
 # run the simulation

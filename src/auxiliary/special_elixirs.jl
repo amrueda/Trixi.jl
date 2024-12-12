@@ -5,53 +5,12 @@
 @muladd begin
 #! format: noindent
 
-# Note: We can't call the method below `Trixi.include` since that is created automatically
-# inside `module Trixi` to `include` source files and evaluate them within the global scope
-# of `Trixi`. However, users will want to evaluate in the global scope of `Main` or something
-# similar to manage dependencies on their own.
 """
-    trixi_include([mod::Module=Main,] elixir::AbstractString; kwargs...)
-
-`include` the file `elixir` and evaluate its content in the global scope of module `mod`.
-You can override specific assignments in `elixir` by supplying keyword arguments.
-It's basic purpose is to make it easier to modify some parameters while running Trixi.jl from the
-REPL. Additionally, this is used in tests to reduce the computational burden for CI while still
-providing examples with sensible default values for users.
-
-Before replacing assignments in `elixir`, the keyword argument `maxiters` is inserted
-into calls to `solve` and `Trixi.solve` with it's default value used in the SciML ecosystem
-for ODEs, see the "Miscellaneous" section of the 
-[documentation](https://docs.sciml.ai/DiffEqDocs/stable/basics/common_solver_opts/).
-
-# Examples
-
-```jldoctest
-julia> redirect_stdout(devnull) do
-         trixi_include(@__MODULE__, joinpath(examples_dir(), "tree_1d_dgsem", "elixir_advection_extended.jl"),
-                       tspan=(0.0, 0.1))
-         sol.t[end]
-       end
-[ Info: You just called `trixi_include`. Julia may now compile the code, please be patient.
-0.1
-```
-"""
-function trixi_include(mod::Module, elixir::AbstractString; kwargs...)
-    # Print information on potential wait time only in non-parallel case
-    if !mpi_isparallel()
-        @info "You just called `trixi_include`. Julia may now compile the code, please be patient."
-    end
-    Base.include(ex -> replace_assignments(insert_maxiters(ex); kwargs...), mod, elixir)
-end
-
-function trixi_include(elixir::AbstractString; kwargs...)
-    trixi_include(Main, elixir; kwargs...)
-end
-
-"""
-    convergence_test([mod::Module=Main,] elixir::AbstractString, iterations; kwargs...)
+    convergence_test([mod::Module=Main,] elixir::AbstractString, iterations, RealT = Float64; kwargs...)
 
 Run `iterations` Trixi.jl simulations using the setup given in `elixir` and compute
 the experimental order of convergence (EOC) in the ``L^2`` and ``L^\\infty`` norm.
+Use `RealT` as the data type to represent the errors.
 In each iteration, the resolution of the respective mesh will be doubled.
 Additional keyword arguments `kwargs...` and the optional module `mod` are passed directly
 to [`trixi_include`](@ref).
@@ -60,12 +19,14 @@ This function assumes that the spatial resolution is set via the keywords
 `initial_refinement_level` (an integer) or `cells_per_dimension` (a tuple of
 integers, one per spatial dimension).
 """
-function convergence_test(mod::Module, elixir::AbstractString, iterations; kwargs...)
+function convergence_test(mod::Module, elixir::AbstractString, iterations,
+                          RealT = Float64;
+                          kwargs...)
     @assert(iterations>1,
             "Number of iterations must be bigger than 1 for a convergence analysis")
 
     # Types of errors to be calculated
-    errors = Dict(:l2 => Float64[], :linf => Float64[])
+    errors = Dict(:l2 => RealT[], :linf => RealT[])
 
     initial_resolution = extract_initial_resolution(elixir, kwargs)
 
@@ -147,7 +108,7 @@ function analyze_convergence(errors, iterations,
         println("")
 
         # Print mean EOCs
-        mean_values = zeros(nvariables)
+        mean_values = zeros(eltype(errors[:l2]), nvariables)
         for v in 1:nvariables
             mean_values[v] = sum(eocs[kind][:, v]) ./ length(eocs[kind][:, v])
             @printf("%-10s", "mean")
@@ -161,112 +122,22 @@ function analyze_convergence(errors, iterations,
     return eoc_mean_values
 end
 
-function convergence_test(elixir::AbstractString, iterations; kwargs...)
-    convergence_test(Main, elixir::AbstractString, iterations; kwargs...)
+function convergence_test(elixir::AbstractString, iterations, RealT = Float64;
+                          kwargs...)
+    convergence_test(Main, elixir::AbstractString, iterations, RealT; kwargs...)
 end
 
 # Helper methods used in the functions defined above
 
-# Apply the function `f` to `expr` and all sub-expressions recursively.
-walkexpr(f, expr::Expr) = f(Expr(expr.head, (walkexpr(f, arg) for arg in expr.args)...))
-walkexpr(f, x) = f(x)
-
-# Insert the keyword argument `maxiters` into calls to `solve` and `Trixi.solve`
-# with default value `10^5` if it is not already present.
-function insert_maxiters(expr)
-    maxiters_default = 10^5
-
-    expr = walkexpr(expr) do x
-        if x isa Expr
-            is_plain_solve = x.head === Symbol("call") && x.args[1] === Symbol("solve")
-            is_trixi_solve = (x.head === Symbol("call") && x.args[1] isa Expr &&
-                              x.args[1].head === Symbol(".") &&
-                              x.args[1].args[1] === Symbol("Trixi") &&
-                              x.args[1].args[2] isa QuoteNode &&
-                              x.args[1].args[2].value === Symbol("solve"))
-
-            if is_plain_solve || is_trixi_solve
-                # Do nothing if `maxiters` is already set as keyword argument...
-                for arg in x.args
-                    # This detects the case where `maxiters` is set as keyword argument
-                    # without or before a semicolon
-                    if (arg isa Expr && arg.head === Symbol("kw") &&
-                        arg.args[1] === Symbol("maxiters"))
-                        return x
-                    end
-
-                    # This detects the case where maxiters is set as keyword argument
-                    # after a semicolon
-                    if (arg isa Expr && arg.head === Symbol("parameters"))
-                        # We need to check each keyword argument listed here
-                        for nested_arg in arg.args
-                            if (nested_arg isa Expr &&
-                                nested_arg.head === Symbol("kw") &&
-                                nested_arg.args[1] === Symbol("maxiters"))
-                                return x
-                            end
-                        end
-                    end
-                end
-
-                # ...and insert it otherwise.
-                push!(x.args, Expr(Symbol("kw"), Symbol("maxiters"), maxiters_default))
-            end
-        end
-        return x
-    end
-
-    return expr
-end
-
-# Replace assignments to `key` in `expr` by `key = val` for all `(key,val)` in `kwargs`.
-function replace_assignments(expr; kwargs...)
-    # replace explicit and keyword assignments
-    expr = walkexpr(expr) do x
-        if x isa Expr
-            for (key, val) in kwargs
-                if (x.head === Symbol("=") || x.head === :kw) &&
-                   x.args[1] === Symbol(key)
-                    x.args[2] = :($val)
-                    # dump(x)
-                end
-            end
-        end
-        return x
-    end
-
-    return expr
-end
-
-# find a (keyword or common) assignment to `destination` in `expr`
-# and return the assigned value
-function find_assignment(expr, destination)
-    # declare result to be able to assign to it in the closure
-    local result
-
-    # find explicit and keyword assignments
-    walkexpr(expr) do x
-        if x isa Expr
-            if (x.head === Symbol("=") || x.head === :kw) &&
-               x.args[1] === Symbol(destination)
-                result = x.args[2]
-                # dump(x)
-            end
-        end
-        return x
-    end
-
-    result
-end
-
-# searches the parameter that specifies the mesh reslution in the elixir
+# Searches for the assignment that specifies the mesh resolution in the elixir
 function extract_initial_resolution(elixir, kwargs)
     code = read(elixir, String)
     expr = Meta.parse("begin \n$code \nend")
 
     try
         # get the initial_refinement_level from the elixir
-        initial_refinement_level = find_assignment(expr, :initial_refinement_level)
+        initial_refinement_level = TrixiBase.find_assignment(expr,
+                                                             :initial_refinement_level)
 
         if haskey(kwargs, :initial_refinement_level)
             return kwargs[:initial_refinement_level]
@@ -274,17 +145,29 @@ function extract_initial_resolution(elixir, kwargs)
             return initial_refinement_level
         end
     catch e
-        if isa(e, UndefVarError)
-            # get cells_per_dimension from the elixir
-            cells_per_dimension = eval(find_assignment(expr, :cells_per_dimension))
+        # If `initial_refinement_level` is not found, we will get an `ArgumentError`
+        if isa(e, ArgumentError)
+            try
+                # get cells_per_dimension from the elixir
+                cells_per_dimension = eval(TrixiBase.find_assignment(expr,
+                                                                     :cells_per_dimension))
 
-            if haskey(kwargs, :cells_per_dimension)
-                return kwargs[:cells_per_dimension]
-            else
-                return cells_per_dimension
+                if haskey(kwargs, :cells_per_dimension)
+                    return kwargs[:cells_per_dimension]
+                else
+                    return cells_per_dimension
+                end
+            catch e2
+                # If `cells_per_dimension` is not found either
+                if isa(e2, ArgumentError)
+                    throw(ArgumentError("`convergence_test` requires the elixir to define " *
+                                        "`initial_refinement_level` or `cells_per_dimension`"))
+                else
+                    rethrow()
+                end
             end
         else
-            throw(e)
+            rethrow()
         end
     end
 end

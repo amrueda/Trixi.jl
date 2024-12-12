@@ -18,7 +18,8 @@ A medium blast wave (modified to lower density and higher pressure) taken from
 function initial_condition_blast_wave(x, t, equations::CompressibleEulerEquations2D)
     # Modified From Hennemann & Gassner JCP paper 2020 (Sec. 6.3) -> modified to lower density, higher pressure
     # Set up polar coordinates
-    inicenter = SVector(0.0, 0.0)
+    RealT = eltype(x)
+    inicenter = SVector(0, 0)
     x_norm = x[1] - inicenter[1]
     y_norm = x[2] - inicenter[2]
     r = sqrt(x_norm^2 + y_norm^2)
@@ -26,10 +27,10 @@ function initial_condition_blast_wave(x, t, equations::CompressibleEulerEquation
     sin_phi, cos_phi = sincos(phi)
 
     # Calculate primitive variables         "normal" medium blast wave
-    rho = r > 0.5 ? 0.1 : 0.2691            # rho = r > 0.5 ? 1 : 1.1691
-    v1 = r > 0.5 ? 0.0 : 0.1882 * cos_phi
-    v2 = r > 0.5 ? 0.0 : 0.1882 * sin_phi
-    p = r > 0.5 ? 1.0E-1 : 1.245          # p   = r > 0.5 ? 1.0E-3 : 1.245
+    rho = r > 0.5f0 ? RealT(0.1) : RealT(0.2691)            # rho = r > 0.5 ? 1 : 1.1691
+    v1 = r > 0.5f0 ? zero(RealT) : RealT(0.1882) * cos_phi
+    v2 = r > 0.5f0 ? zero(RealT) : RealT(0.1882) * sin_phi
+    p = r > 0.5f0 ? RealT(1.0E-1) : RealT(1.245)          # p   = r > 0.5 ? 1.0E-3 : 1.245
 
     return prim2cons(SVector(rho, v1, v2, p), equations)
 end
@@ -39,7 +40,7 @@ surface_flux = flux_lax_friedrichs
 volume_flux = flux_ranocha
 basis = LobattoLegendreBasis(3)
 limiter_idp = SubcellLimiterIDP(equations, basis;
-                                positivity_variables_cons = [1],
+                                positivity_variables_cons = ["rho"],
                                 positivity_correction_factor = 0.5)
 volume_integral = VolumeIntegralSubcellLimiting(limiter_idp;
                                                 volume_flux_dg = volume_flux,
@@ -67,7 +68,7 @@ analysis_callback = AnalysisCallback(semi, interval = analysis_interval)
 
 alive_callback = AliveCallback(analysis_interval = analysis_interval)
 
-save_solution = SaveSolutionCallback(interval = 100,
+save_solution = SaveSolutionCallback(dt = 0.1,
                                      save_initial_solution = true,
                                      save_final_solution = true,
                                      solution_variables = cons2prim)

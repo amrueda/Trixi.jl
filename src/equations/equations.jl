@@ -42,6 +42,18 @@ Common choices of the `conversion_function` are [`cons2cons`](@ref) and
 """
 function varnames end
 
+# Return the index of `varname` in `varnames(solution_variables, equations)` if available.
+# Otherwise, throw an error.
+function get_variable_index(varname, equations;
+                            solution_variables = cons2cons)
+    index = findfirst(==(varname), varnames(solution_variables, equations))
+    if isnothing(index)
+        throw(ArgumentError("$varname is no valid variable."))
+    end
+
+    return index
+end
+
 # Add methods to show some information on systems of equations.
 function Base.show(io::IO, equations::AbstractEquations)
     # Since this is not performance-critical, we can use `@nospecialize` to reduce latency.
@@ -211,8 +223,8 @@ end
 """
     NonConservativeLocal()
 
-Struct used for multiple dispatch on non-conservative flux functions in the format of "local * symmetric". 
-When the argument `nonconservative_type` is of type `NonConservativeLocal`, 
+Struct used for multiple dispatch on non-conservative flux functions in the format of "local * symmetric".
+When the argument `nonconservative_type` is of type `NonConservativeLocal`,
 the function returns the local part of the non-conservative term.
 """
 struct NonConservativeLocal end
@@ -220,8 +232,8 @@ struct NonConservativeLocal end
 """
     NonConservativeSymmetric()
 
-Struct used for multiple dispatch on non-conservative flux functions in the format of "local * symmetric". 
-When the argument `nonconservative_type` is of type `NonConservativeSymmetric`, 
+Struct used for multiple dispatch on non-conservative flux functions in the format of "local * symmetric".
+When the argument `nonconservative_type` is of type `NonConservativeSymmetric`,
 the function returns the symmetric part of the non-conservative term.
 """
 struct NonConservativeSymmetric end
@@ -248,7 +260,14 @@ combined with certain solvers (e.g., subcell limiting).
 function n_nonconservative_terms end
 have_constant_speed(::AbstractEquations) = False()
 
+"""
+    default_analysis_errors(equations)
+
+Default analysis errors (`:l2_error` and `:linf_error`) used by the
+[`AnalysisCallback`](@ref).
+"""
 default_analysis_errors(::AbstractEquations) = (:l2_error, :linf_error)
+
 """
     default_analysis_integrals(equations)
 
@@ -287,6 +306,37 @@ so please make sure your input is correct.
 The inverse conversion is performed by [`cons2prim`](@ref).
 """
 function prim2cons end
+
+"""
+    velocity(u, equations)
+
+Return the velocity vector corresponding to the equations, e.g., fluid velocity for
+Euler's equations. The velocity in certain orientation or normal direction (scalar) can be computed
+with `velocity(u, orientation, equations)` or `velocity(u, normal_direction, equations)`
+respectively. The `velocity(u, normal_direction, equations)` function calls
+`velocity(u, equations)` to compute the velocity vector and then normal vector, thus allowing
+a general function to be written for the AbstractEquations type. However, the
+`velocity(u, orientation, equations)` is written for each equation separately to ensure
+only the velocity in the desired direction (orientation) is computed.
+`u` is a vector of the conserved variables at a single node, i.e., a vector
+of the correct length `nvariables(equations)`.
+"""
+function velocity end
+
+@inline function velocity(u, normal_direction::AbstractVector,
+                          equations::AbstractEquations{2})
+    vel = velocity(u, equations)
+    v = vel[1] * normal_direction[1] + vel[2] * normal_direction[2]
+    return v
+end
+
+@inline function velocity(u, normal_direction::AbstractVector,
+                          equations::AbstractEquations{3})
+    vel = velocity(u, equations)
+    v = vel[1] * normal_direction[1] + vel[2] * normal_direction[2] +
+        vel[3] * normal_direction[3]
+    return v
+end
 
 """
     entropy(u, equations)
@@ -357,6 +407,12 @@ of the correct length `nvariables(equations)`.
 """
 function energy_internal end
 
+# Default implementation of gradient for `variable`. Used for subcell limiting.
+# Implementing a gradient function for a specific variable improves the performance.
+@inline function gradient_conservative(variable, u, equations)
+    return ForwardDiff.gradient(x -> variable(x, equations), u)
+end
+
 ####################################################################################################
 # Include files with actual implementations for different systems of equations.
 
@@ -380,8 +436,6 @@ abstract type AbstractShallowWaterEquations{NDIMS, NVARS} <:
               AbstractEquations{NDIMS, NVARS} end
 include("shallow_water_1d.jl")
 include("shallow_water_2d.jl")
-include("shallow_water_two_layer_1d.jl")
-include("shallow_water_two_layer_2d.jl")
 include("shallow_water_quasi_1d.jl")
 
 # CompressibleEulerEquations
@@ -390,6 +444,7 @@ abstract type AbstractCompressibleEulerEquations{NDIMS, NVARS} <:
 include("compressible_euler_1d.jl")
 include("compressible_euler_2d.jl")
 include("compressible_euler_3d.jl")
+include("compressible_euler_quasi_1d.jl")
 
 # CompressibleEulerMulticomponentEquations
 abstract type AbstractCompressibleEulerMulticomponentEquations{NDIMS, NVARS, NCOMP} <:
@@ -437,10 +492,12 @@ include("ideal_glm_mhd_multicomponent_1d.jl")
 include("ideal_glm_mhd_multicomponent_2d.jl")
 
 # IdealMhdMultiIonEquations
-abstract type AbstractIdealMhdMultiIonEquations{NDIMS, NVARS, NCOMP} <:
+abstract type AbstractIdealGlmMhdMultiIonEquations{NDIMS, NVARS, NCOMP} <:
               AbstractEquations{NDIMS, NVARS} end
+include("ideal_glm_mhd_multiion.jl")
 include("ideal_mhd_multiion_1d.jl")
-include("ideal_mhd_multiion_2d.jl")
+include("ideal_glm_mhd_multiion_2d.jl")
+include("ideal_glm_mhd_multiion_3d.jl")
 
 # Retrieve number of components from equation instance for the multicomponent case
 @inline function ncomponents(::AbstractIdealGlmMhdMulticomponentEquations{NDIMS, NVARS,
@@ -463,22 +520,23 @@ In particular, not the components themselves are returned.
 end
 
 # Retrieve number of components from equation instance for the multi-ion case
-@inline function ncomponents(::AbstractIdealMhdMultiIonEquations{NDIMS, NVARS, NCOMP}) where {
-                                                                                              NDIMS,
-                                                                                              NVARS,
-                                                                                              NCOMP
-                                                                                              }
+@inline function ncomponents(::AbstractIdealGlmMhdMultiIonEquations{NDIMS, NVARS,
+                                                                    NCOMP}) where {
+                                                                                   NDIMS,
+                                                                                   NVARS,
+                                                                                   NCOMP
+                                                                                   }
     NCOMP
 end
 
 """
-    eachcomponent(equations::AbstractIdealMhdMultiIonEquations)
+    eachcomponent(equations::AbstractIdealGlmMhdMultiIonEquations)
 
 Return an iterator over the indices that specify the location in relevant data structures
-for the components in `AbstractIdealMhdMultiIonEquations`. 
+for the components in `AbstractIdealGlmMhdMultiIonEquations`. 
 In particular, not the components themselves are returned.
 """
-@inline function eachcomponent(equations::AbstractIdealMhdMultiIonEquations)
+@inline function eachcomponent(equations::AbstractIdealGlmMhdMultiIonEquations)
     Base.OneTo(ncomponents(equations))
 end
 
@@ -503,8 +561,19 @@ include("acoustic_perturbation_2d.jl")
 # Linearized Euler equations
 abstract type AbstractLinearizedEulerEquations{NDIMS, NVARS} <:
               AbstractEquations{NDIMS, NVARS} end
+include("linearized_euler_1d.jl")
 include("linearized_euler_2d.jl")
+include("linearized_euler_3d.jl")
 
-abstract type AbstractEquationsParabolic{NDIMS, NVARS} <:
+abstract type AbstractEquationsParabolic{NDIMS, NVARS, GradientVariables} <:
               AbstractEquations{NDIMS, NVARS} end
+
+# Lighthill-Witham-Richards (LWR) traffic flow model
+abstract type AbstractTrafficFlowLWREquations{NDIMS, NVARS} <:
+              AbstractEquations{NDIMS, NVARS} end
+include("traffic_flow_lwr_1d.jl")
+
+abstract type AbstractMaxwellEquations{NDIMS, NVARS} <:
+              AbstractEquations{NDIMS, NVARS} end
+include("maxwell_1d.jl")
 end # @muladd

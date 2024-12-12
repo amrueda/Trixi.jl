@@ -76,10 +76,7 @@ end
         du_i = du[i]
         for j in col_ids
             u_j = u[j]
-            # The `normal_direction::AbstractVector` has to be passed in twice.
-            # This is because on curved meshes, nonconservative fluxes are
-            # evaluated using both the normal and its average at interfaces.
-            f_ij = volume_flux(u_i, u_j, normal_direction, normal_direction, equations)
+            f_ij = volume_flux(u_i, u_j, normal_direction, equations)
             du_i = du_i + 2 * A[i, j] * f_ij
         end
         du[i] = du_i
@@ -88,8 +85,8 @@ end
 
 # Version for sparse operators and symmetric fluxes
 @inline function hadamard_sum!(du,
-                               A::LinearAlgebra.Adjoint{<:Any, <:AbstractSparseMatrixCSC
-                                                        },
+                               A::LinearAlgebra.Adjoint{<:Any,
+                                                        <:AbstractSparseMatrixCSC},
                                flux_is_symmetric::True, volume_flux,
                                orientation_or_normal_direction, u, equations)
     A_base = parent(A) # the adjoint of a SparseMatrixCSC is basically a SparseMatrixCSR
@@ -122,8 +119,8 @@ end
 
 # Version for sparse operators and symmetric fluxes with curved meshes
 @inline function hadamard_sum!(du,
-                               A::LinearAlgebra.Adjoint{<:Any, <:AbstractSparseMatrixCSC
-                                                        },
+                               A::LinearAlgebra.Adjoint{<:Any,
+                                                        <:AbstractSparseMatrixCSC},
                                flux_is_symmetric::True, volume_flux,
                                normal_directions::AbstractVector{<:AbstractVector},
                                u, equations)
@@ -161,8 +158,8 @@ end
 # TODO: DGMulti. Fix for curved meshes.
 # Version for sparse operators and non-symmetric fluxes
 @inline function hadamard_sum!(du,
-                               A::LinearAlgebra.Adjoint{<:Any, <:AbstractSparseMatrixCSC
-                                                        },
+                               A::LinearAlgebra.Adjoint{<:Any,
+                                                        <:AbstractSparseMatrixCSC},
                                flux_is_symmetric::False, volume_flux,
                                normal_direction::AbstractVector, u, equations)
     A_base = parent(A) # the adjoint of a SparseMatrixCSC is basically a SparseMatrixCSR
@@ -176,11 +173,8 @@ end
         for id in nzrange(A_base, i)
             A_ij = vals[id]
             j = rows[id]
-            # The `normal_direction::AbstractVector` has to be passed in twice.
-            # This is because on curved meshes, nonconservative fluxes are
-            # evaluated using both the normal and its average at interfaces.
             u_j = u[j]
-            f_ij = volume_flux(u_i, u_j, normal_direction, normal_direction, equations)
+            f_ij = volume_flux(u_i, u_j, normal_direction, equations)
             du_i = du_i + 2 * A_ij * f_ij
         end
         du[i] = du_i
@@ -620,7 +614,7 @@ end
 # an entropy conservative/stable discretization. For modal DG schemes, an extra `entropy_projection!`
 # is required (see https://doi.org/10.1016/j.jcp.2018.02.033, Section 4.3).
 # Also called by DGMultiFluxDiff{<:GaussSBP} solvers.
-function rhs!(du, u, t, mesh, equations, initial_condition, boundary_conditions::BC,
+function rhs!(du, u, t, mesh, equations, boundary_conditions::BC,
               source_terms::Source, dg::DGMultiFluxDiff, cache) where {Source, BC}
     @trixi_timeit timer() "reset ∂u/∂t" reset_du!(du, dg, cache)
 
@@ -666,7 +660,7 @@ end
 # for such schemes is very similar to the implementation of `rhs!` for standard DG methods,
 # but specializes `calc_volume_integral`.
 function rhs!(du, u, t, mesh, equations,
-              initial_condition, boundary_conditions::BC, source_terms::Source,
+              boundary_conditions::BC, source_terms::Source,
               dg::DGMultiFluxDiffSBP, cache) where {BC, Source}
     @trixi_timeit timer() "reset ∂u/∂t" reset_du!(du, dg, cache)
 
