@@ -99,7 +99,7 @@ function IdealGlmMhdMultiIonEquations2D(; gammas, charge_to_mass,
     _ion_electron_collision_constants = promote(ion_electron_collision_constants...)
     RealT = promote_type(eltype(_gammas), eltype(_charge_to_mass),
                          eltype(_gas_constants), eltype(_molar_masses),
-                         eltype(collision_frequency),
+                         typeof(collision_frequency),
                          eltype(_ion_electron_collision_constants))
     __gammas = SVector(map(RealT, _gammas))
     __charge_to_mass = SVector(map(RealT, _charge_to_mass))
