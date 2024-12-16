@@ -110,7 +110,7 @@ mesh = TreeMesh(coordinates_min, coordinates_max,
 # Ion-ion and ion-electron collision source terms
 # In this particular case, we can omit source_terms_lorentz because the magnetic field is zero!
 function source_terms(u, x, t, equations::IdealGlmMhdMultiIonEquations2D)
-    source_terms_collision_ion_ion(u, x, t, equations) + 
+    source_terms_collision_ion_ion(u, x, t, equations) +
     source_terms_collision_ion_electron(u, x, t, equations)
 end
 
@@ -129,8 +129,7 @@ analysis_callback = AnalysisCallback(semi,
                                      save_analysis = true,
                                      interval = analysis_interval,
                                      extra_analysis_integrals = (temperature1,
-                                                                 temperature2)
-                                                                 )
+                                                                 temperature2))
 alive_callback = AliveCallback(analysis_interval = analysis_interval)
 
 stepsize_callback = StepsizeCallback(cfl = 0.01) # Very small CFL due to the stiff source terms 
