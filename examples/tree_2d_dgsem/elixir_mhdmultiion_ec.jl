@@ -6,11 +6,7 @@ using Trixi
 # semidiscretization of the ideal multi-ion MHD equations
 # TODO: remove un-needed parameters and add test for collisions
 equations = IdealGlmMhdMultiIonEquations2D(gammas = (1.4, 1.667),
-                                           charge_to_mass = (1.0, 2.0),
-                                           gas_constants = (1.0, 1.0),
-                                           molar_masses = (1.0, 1.0),
-                                           collision_frequency = 1.0,
-                                           ion_electron_collision_constants = (1.0, 1.0))
+                                           charge_to_mass = (1.0, 2.0))
 
 initial_condition = initial_condition_weak_blast_wave
 
