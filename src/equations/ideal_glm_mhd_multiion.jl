@@ -488,9 +488,6 @@ function source_terms_collision_ion_ion(u, x, t,
         S_q3 = 0
         S_E = 0
         for l in eachcomponent(equations)
-            # Skip computation for same species
-            l == k && continue
-
             rho_l, v1_l, v2_l, v3_l, p_l = get_component(l, prim, equations)
             T_l = p_l / (rho_l * gas_constants[l])
 
