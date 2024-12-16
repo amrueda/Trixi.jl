@@ -45,7 +45,7 @@ mutable struct IdealGlmMhdMultiIonEquations2D{NVARS, NCOMP, RealT <: Real,
     charge_to_mass::SVector{NCOMP, RealT} # Charge to mass ratios
     gas_constants::SVector{NCOMP, RealT} # Specific gas constants
     molar_masses::SVector{NCOMP, RealT} # Molar masses (can be provided in any units as they are only used to compute ratios)
-    collision_frequency::RealT # Single collision frequency scaled with molecular mass of ion 1 (TODO: Replace by matrix of collision frequencies)
+    collision_frequency::Array{RealT, 2} # Matrix of collision frequencies scaled with molecular mass of ion 1
     ion_electron_collision_constants::SVector{NCOMP, RealT} # Constants for the ion-electron collision frequencies. The collision frequency is obtained as constant * (e * n_e) / T_e^1.5
     electron_pressure::ElectronPressure # Function to compute the electron pressure
     electron_temperature::ElectronTemperature # Function to compute the electron temperature
@@ -65,7 +65,7 @@ mutable struct IdealGlmMhdMultiIonEquations2D{NVARS, NCOMP, RealT <: Real,
                                                                  ::SVector{NCOMP,
                                                                            RealT},
                                                                  collision_frequency
-                                                                 ::RealT,
+                                                                 ::Array{RealT, 2},
                                                                  ion_electron_collision_constants
                                                                  ::SVector{NCOMP,
                                                                            RealT},
@@ -90,8 +90,9 @@ function IdealGlmMhdMultiIonEquations2D(; gammas, charge_to_mass,
                                                                      eltype(gammas)}),
                                         molar_masses = zero(SVector{length(gammas),
                                                                     eltype(gammas)}),
-                                        collision_frequency = convert(eltype(gammas),
-                                                                      0),
+                                        collision_frequency = zeros(eltype(gammas),
+                                                                    length(gammas),
+                                                                    length(gammas)),
                                         ion_electron_collision_constants = zero(SVector{length(gammas),
                                                                                         eltype(gammas)}),
                                         electron_pressure = electron_pressure_zero,
@@ -104,7 +105,7 @@ function IdealGlmMhdMultiIonEquations2D(; gammas, charge_to_mass,
     _ion_electron_collision_constants = promote(ion_electron_collision_constants...)
     RealT = promote_type(eltype(_gammas), eltype(_charge_to_mass),
                          eltype(_gas_constants), eltype(_molar_masses),
-                         typeof(collision_frequency),
+                         eltype(collision_frequency),
                          eltype(_ion_electron_collision_constants))
     __gammas = SVector(map(RealT, _gammas))
     __charge_to_mass = SVector(map(RealT, _charge_to_mass))

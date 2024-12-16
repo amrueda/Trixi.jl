@@ -500,7 +500,8 @@ function source_terms_collision_ion_ion(u, x, t,
             T_kl /= (molar_masses[k] + molar_masses[l])
 
             # Compute effective collision frequency
-            v_kl = (collision_frequency * (rho_l * molar_masses[1] / molar_masses[l]) /
+            v_kl = (collision_frequency[l, k] *
+                    (rho_l * molar_masses[1] / molar_masses[l]) /
                     T_kl^(3 / 2))
 
             # Correct the collision frequency with the drifting effect (NEW - Rambo & Denavit, Rambo & Procassini)
