@@ -11,15 +11,15 @@ using Trixi
 #   Computers & Fluids, 186, 38-57.
 #
 # This is effectively a zero-dimensional case because the spatial gradients are zero, and we use it to test the
-# collission source terms.
+# collision source terms.
 #
 # To run this physically relevant test, we use the following characteristic quantities to non-dimensionalize
 # the equations:
-# Characteristic length: L_inf = 1.00E-03	m
-# Characteristic density:	rho_inf = 1.99E+00	kg/m^3
-# Characteristic velocity: V_inf = 1.00E+06	m/s
-# Characteristic vacuum permeability: mu0_inf = 1.26E-06	N/A^2
-# Characteristic gas constant: R_inf = 6.92237E+02	J/kg/K
+# Characteristic length: L_inf = 1.00E-03 m (domain size)
+# Characteristic density:	rho_inf = 1.99E+00 kg/m^3 (corresponds to a number density of 1e20 cm^{-3})
+# Characteristic vacuum permeability: mu0_inf = 1.26E-06 N/A^2 (for equations with mu0 = 1)
+# Characteristic gas constant: R_inf = 6.92237E+02 J/kg/K (specific gas constant for a Carbon fluid)
+# Characteristic velocity: V_inf = 1.00E+06 m/s
 #
 # The results of the paper can be reproduced using `source_terms = source_terms_collision_ion_ion` (i.e., only
 # taking into account ion-ion collisions). However, we include ion-electron collisions assuming a constant 
