@@ -86,9 +86,14 @@ end
 
 # TODO: Add default values
 function IdealGlmMhdMultiIonEquations2D(; gammas, charge_to_mass,
-                                        gas_constants,
-                                        molar_masses, collision_frequency,
-                                        ion_electron_collision_constants,
+                                        gas_constants = zero(SVector{length(gammas),
+                                                                     eltype(gammas)}),
+                                        molar_masses = zero(SVector{length(gammas),
+                                                                    eltype(gammas)}),
+                                        collision_frequency = convert(eltype(gammas),
+                                                                      0),
+                                        ion_electron_collision_constants = zero(SVector{length(gammas),
+                                                                                        eltype(gammas)}),
                                         electron_pressure = electron_pressure_zero,
                                         electron_temperature = electron_pressure_zero,
                                         initial_c_h = convert(eltype(gammas), NaN))

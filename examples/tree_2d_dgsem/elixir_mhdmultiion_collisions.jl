@@ -52,6 +52,7 @@ equations = IdealGlmMhdMultiIonEquations2D(gammas = (5 / 3, 5 / 3),
                                            gas_constants = (1.0, 1.0), # [nondimensional]
                                            molar_masses = (1.0, 1.0), # [nondimensional]
                                            collision_frequency = 0.4079382480442680, # [nondimensional]
+                                           # (computed with equation (4.142 of Schunk&Nagy (2009)))
                                            ion_electron_collision_constants = (8.56368379833E-06,
                                                                                8.56368379833E-06), # [nondimensional]
                                            electron_pressure = electron_pressure_constantTe,
