@@ -7,7 +7,17 @@
 
 @doc raw"""
     IdealGlmMhdMultiIonEquations2D(; gammas, charge_to_mass, 
+                                   gas_constants = zero(SVector{length(gammas),
+                                                                eltype(gammas)}),
+                                   molar_masses = zero(SVector{length(gammas),
+                                                               eltype(gammas)}),
+                                   collision_frequency = zeros(eltype(gammas),
+                                                               length(gammas),
+                                                               length(gammas)),
+                                   ion_electron_collision_constants = zero(SVector{length(gammas),
+                                                                                   eltype(gammas)}),
                                    electron_pressure = electron_pressure_zero,
+                                   electron_temperature = electron_pressure_zero,
                                    initial_c_h = NaN)
 
 The ideal compressible multi-ion MHD equations in two space dimensions augmented with a 
@@ -19,9 +29,30 @@ assumes that the equations are non-dimensionalized such, that the vacuum permeab
 In case of more than one ion species, the specific heat capacity ratios `gammas` and the charge-to-mass 
 ratios `charge_to_mass` should be passed as tuples, e.g., `gammas=(1.4, 1.667)`.
 
+The ion-ion and ion-electron collision source terms can be computed using the functions 
+[`source_terms_collision_ion_ion`](@ref) and [`source_terms_collision_ion_electron`](@ref), respectively.
+
+For ion-ion collision terms, the optional arguments `gas_constants`, `molar_masses`, and `collision_frequency` 
+must be provided.  For ion-electron collision terms, the optional arguments `gas_constants`, `molar_masses`, 
+`ion_electron_collision_constants`, and `electron_temperature` are required.
+
+- **`gas_constants`** and **`molar_masses`** are tuples containing the gas constant and molar mass of each 
+  ion species, respectively. The **molar masses** can be provided in any unit system, as they are only used to 
+  compute ratios and are independent of the other arguments.
+
+- **`collision_frequency`** is a symmetric matrix that specifies the collision frequencies between pairs of ion species, 
+  scaled by the molecular mass of the first ion species. For example, `collision_frequency[2, 3]` contains the collision 
+  frequency of ion species 2 with ion species 3 (which can be derived using the kinetic theory of gases; see *Schunk & Nagy, 2000*) 
+  divided by the molecular mass of ion species 1.
+
+- **`ion_electron_collision_constants`** is a tuple containing the ion-electron collision frequency for each ion species
+  divided by the elementary charge. The ion-electron collision frequencies can also be computed using the kinetic theory 
+  of gases (see *Schunk & Nagy, 2000*).
+
 The argument `electron_pressure` can be used to pass a function that computes the electron
 pressure as a function of the state `u` with the signature `electron_pressure(u, equations)`.
-By default, the electron pressure is zero.
+The gradient of the electron pressure is relevant for the computation of the Lorentz flux
+and non-conservative term. By default, the electron pressure is zero.
 
 The argument `initial_c_h` can be used to set the GLM divergence-cleaning speed. Note that 
 `initial_c_h = 0` deactivates the divergence cleaning. The callback [`GlmSpeedCallback`](@ref)
@@ -33,6 +64,8 @@ References:
 - A. Rueda-Ramírez, A. Sikstel, G. Gassner, An Entropy-Stable Discontinuous Galerkin Discretization
   of the Ideal Multi-Ion Magnetohydrodynamics System (2024). Journal of Computational Physics.
   [DOI: 10.1016/j.jcp.2024.113655](https://doi.org/10.1016/j.jcp.2024.113655).
+- Schunk, R. W., & Nagy, A. F. (2000). Ionospheres: Physics, plasma physics, and chemistry. 
+  Cambridge university press.
 
 !!! info "The multi-ion GLM-MHD equations require source terms"
     In case of more than one ion species, the multi-ion GLM-MHD equations should ALWAYS be used
