@@ -466,16 +466,48 @@ end
     return dissipation
 end
 
-"""
+@doc raw"""
     source_terms_collision_ion_ion(u, x, t,
                                    equations::AbstractIdealGlmMhdMultiIonEquations)
 
-Ion-ion collision source terms, cf. Rueda-Ramirez et al. (2023) and Rubin et al. (2015)
+Compute the ion-ion collision source terms for the momentum and energy equations of each ion species as
+```math
+\begin{aligned}
+  \vec{s}_{\rho_k \vec{v}_k} =&  \rho_k\sum_{k'}\bar{\nu}_{kk'}(\vec{v}_{k'} - \vec{v}_k),\\
+  s_{E_k}  =& 
+    3 \sum_{k'} \left(
+    \bar{\nu}_{kk'} \frac{\rho_k M_{1}}{M_{k'} + M_k} R_1 (T_{k'} - T_k)
+    \right) + 
+    \sum_{k'} \left(
+        \bar{\nu}_{kk'} \rho_k \frac{M_{k'}}{M_{k'} + M_k} \norm{\vec{v}_{k'} - \vec{v}_k}^2
+        \right)
+        +
+        \vec{v}_k \cdot \vec{s}_{\rho_k \vec{v}_k},
+\end{aligned}
+```
+where ``M_k`` is the molar mass of ion species `k` provided in `molar_masses`, 
+``R_k`` is specific gas constant of ion species `k` provided in `gas_constants`, and
+ ``\bar{\nu}_{kk'}`` is the effective collision frequency of species `k` with species `k'`, which is computed as
+```math
+\begin{aligned}
+  \bar{\nu}_{kk'} = \bar{\nu}^1_{kk'} \tilde{B}_{kk'} \frac{\rho_{k'}}{T_{k k'}^{3/2}},
+\end{aligned}
+```
+with the so-called reduced temperature ``T_{k k'}`` and the ion-ion collision constants ``\tilde{B}_{kk'}`` provided
+in `ion_electron_collision_constants`.
+
+The additional coefficient ``\bar{\nu}^1_{kk'}`` is a non-dimensional drift correction factor proposed by Rambo and 
+Denavit.
+
+References:
+- P. Rambo, J. Denavit, Interpenetration and ion separation in colliding plasmas, Physics of Plasmas 1 (1994) 4050–4060.
+- Schunk, R. W., Nagy, A. F. (2000). Ionospheres: Physics, plasma physics, and chemistry. 
+  Cambridge university press.
 """
 function source_terms_collision_ion_ion(u, x, t,
                                         equations::AbstractIdealGlmMhdMultiIonEquations)
     s = zero(MVector{nvariables(equations), eltype(u)})
-    @unpack gammas, gas_constants, molar_masses, collision_frequency = equations
+    @unpack gas_constants, molar_masses, ion_ion_collision_constants = equations
 
     prim = cons2prim(u, equations)
 
@@ -491,20 +523,16 @@ function source_terms_collision_ion_ion(u, x, t,
             rho_l, v1_l, v2_l, v3_l, p_l = get_component(l, prim, equations)
             T_l = p_l / (rho_l * gas_constants[l])
 
-            # Reduced temperature (without scaling with molar mass)
-            T_kl = (molar_masses[l] * T_k + molar_masses[k] * T_l)
+            # Reduced temperature
+            T_kl = (molar_masses[l] * T_k + molar_masses[k] * T_l) /
+                   (molar_masses[k] + molar_masses[l])
 
             delta_v2 = (v1_l - v1_k)^2 + (v2_l - v2_k)^2 + (v3_l - v3_k)^2
 
-            # Scale T_kl with molar mass
-            T_kl /= (molar_masses[k] + molar_masses[l])
+            # Compute collision frequency without drifting correction
+            v_kl = ion_ion_collision_constants[k, l] * rho_l / T_kl^(3 / 2)
 
-            # Compute effective collision frequency
-            v_kl = (collision_frequency[l, k] *
-                    (rho_l * molar_masses[1] / molar_masses[l]) /
-                    T_kl^(3 / 2))
-
-            # Correct the collision frequency with the drifting effect (NEW - Rambo & Denavit, Rambo & Procassini)
+            # Correct the collision frequency with the drifting effect
             z2 = delta_v2 / (p_l / rho_l + p_k / rho_k)
             v_kl /= (1 + (2 / (9 * pi))^(1 / 3) * z2)^(3 / 2)
 
@@ -525,17 +553,44 @@ function source_terms_collision_ion_ion(u, x, t,
     return SVector{nvariables(equations), real(equations)}(s)
 end
 
-"""
+@doc raw"""
     source_terms_collision_ion_electron(u, x, t,
                                         equations::AbstractIdealGlmMhdMultiIonEquations)
 
-Ion-electron collision source terms, cf. Rueda-Ramirez et al. (2023) and Rubin et al. (2015)
-Here we assume v_e = v⁺ (no effect of currents on the electron velocity)
+Compute the ion-ion collision source terms for the momentum and energy equations of each ion species. We assume v_e = v⁺ 
+(no effect of currents on the electron velocity).
+
+The collision sources read as
+```math
+\begin{aligned}
+    \vec{s}^{ke}_{\rho_k \vec{v}_k} =&  \rho_k \bar{\nu}_{ke} (\vec{v}_{e} - \vec{v}_k),
+    \\
+    s^{ke}_{E_k}  =& 
+    3  \left(
+    \bar{\nu}_{ke} \frac{\rho_k M_{1}}{M_k} \underbrace{R_1}_{=1} (T_{e} - T_k)
+    \right) 
+        +
+        \vec{v}_k \cdot \vec{s}_{\rho_k \vec{v}_k},
+\end{aligned}
+where ``\bar{\nu}_{kk'}`` is the collision frequency of species `k` with the electrons, which is computed as
+```math
+\begin{aligned}
+  \bar{\nu}_{ke} = \tilde{B}_{ke} \frac{e n_e}{T_e^{3/2}},
+\end{aligned}
+```
+where ``e n_e`` is the total electron charge computed assuming quasi-neutrality, `T_e` is the electron temperature
+computed with `electron_temperature` (see [`IdealGlmMhdMultiIonEquations2D`](@ref)), and ``\tilde{B}_{ke}`` is the
+ion-electron collision coefficient provided in `ion_electron_collision_constants`.
+
+References:
+- P. Rambo, J. Denavit, Interpenetration and ion separation in colliding plasmas, Physics of Plasmas 1 (1994) 4050–4060.
+- Schunk, R. W., Nagy, A. F. (2000). Ionospheres: Physics, plasma physics, and chemistry. 
+  Cambridge university press.
 """
 function source_terms_collision_ion_electron(u, x, t,
                                              equations::AbstractIdealGlmMhdMultiIonEquations)
     s = zero(MVector{nvariables(equations), eltype(u)})
-    @unpack gammas, gas_constants, molar_masses, ion_electron_collision_constants, electron_temperature = equations
+    @unpack gas_constants, molar_masses, ion_electron_collision_constants, electron_temperature = equations
 
     prim = cons2prim(u, equations)
     T_e = electron_temperature(u, equations)
@@ -582,7 +637,7 @@ Here we assume v_e = v⁺ (no effect of currents on the electron velocity)
 function source_terms_collision_ion_electron_ohm(u, x, t,
                                                  equations::AbstractIdealGlmMhdMultiIonEquations)
     s = zero(MVector{nvariables(equations), eltype(u)})
-    @unpack gammas, gas_constants, charge_to_mass, molar_masses, ion_electron_collision_constants, electron_temperature = equations
+    @unpack gas_constants, charge_to_mass, molar_masses, ion_electron_collision_constants, electron_temperature = equations
 
     prim = cons2prim(u, equations)
     T_e = electron_temperature(u, equations)

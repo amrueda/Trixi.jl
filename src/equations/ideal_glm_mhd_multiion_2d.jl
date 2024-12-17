@@ -11,7 +11,7 @@
                                                                 eltype(gammas)}),
                                    molar_masses = zero(SVector{length(gammas),
                                                                eltype(gammas)}),
-                                   collision_frequency = zeros(eltype(gammas),
+                                   ion_ion_collision_constants = zeros(eltype(gammas),
                                                                length(gammas),
                                                                length(gammas)),
                                    ion_electron_collision_constants = zero(SVector{length(gammas),
@@ -32,7 +32,7 @@ ratios `charge_to_mass` should be passed as tuples, e.g., `gammas=(1.4, 1.667)`.
 The ion-ion and ion-electron collision source terms can be computed using the functions 
 [`source_terms_collision_ion_ion`](@ref) and [`source_terms_collision_ion_electron`](@ref), respectively.
 
-For ion-ion collision terms, the optional arguments `gas_constants`, `molar_masses`, and `collision_frequency` 
+For ion-ion collision terms, the optional arguments `gas_constants`, `molar_masses`, and `ion_ion_collision_constants` 
 must be provided.  For ion-electron collision terms, the optional arguments `gas_constants`, `molar_masses`, 
 `ion_electron_collision_constants`, and `electron_temperature` are required.
 
@@ -40,14 +40,25 @@ must be provided.  For ion-electron collision terms, the optional arguments `gas
   ion species, respectively. The **molar masses** can be provided in any unit system, as they are only used to 
   compute ratios and are independent of the other arguments.
 
-- **`collision_frequency`** is a symmetric matrix that specifies the collision frequencies between pairs of ion species, 
-  scaled by the molecular mass of the first ion species. For example, `collision_frequency[2, 3]` contains the collision 
-  frequency of ion species 2 with ion species 3 (which can be derived using the kinetic theory of gases; see *Schunk & Nagy, 2000*) 
-  divided by the molecular mass of ion species 1.
+- **`ion_ion_collision_constants`** is a symmetric matrix that contains coefficients to compute the collision
+  frequencies between pairs of ion species. For example, `ion_ion_collision_constants[2, 3]` contains the collision 
+  coefficient for collisions between the ion species 2 and the ion species 3. These constants are derived using the kinetic
+  theory of gases (see, e.g., *Schunk & Nagy, 2000*). They are related to the collision coefficients ``B_{st}`` listed
+  in Table 4.3 of *Schunk & Nagy (2000)*, but are scaled by the molecular mass of ion species ``t`` (i.e., 
+  `ion_ion_collision_constants[2, 3] = ` ``B_{st}/m_{t}``) and must be provided in consistent physical units 
+  (Schunk & Nagy use ``cm^3 K^{3/2} / s``). 
+  See [`source_terms_collision_ion_ion`](@ref) for more details on how these constants are used to compute the collision
+  frequencies.
 
-- **`ion_electron_collision_constants`** is a tuple containing the ion-electron collision frequency for each ion species
-  divided by the elementary charge. The ion-electron collision frequencies can also be computed using the kinetic theory 
-  of gases (see *Schunk & Nagy, 2000*).
+- **`ion_electron_collision_constants`** is a tuple containing coefficients to compute the ion-electron collision frequency 
+  for each ion species. They correspond to the collision coefficients ``B_{se}` divided by the elementary charge. 
+  The ion-electron collision frequencies can also be computed using the kinetic theory 
+  of gases (see, e.g., *Schunk & Nagy, 2000*). See [`source_terms_collision_ion_electron`](@ref) for more details on how these
+  constants are used to compute the collision frequencies.
+
+- **`electron_temperature`** is a function with the signature `electron_temperature(u, equations)` that can be used
+  compute the electron temperature as a function of the state `u`. The electron temperature is relevant for the computation 
+  of the ion-electron collision source terms.
 
 The argument `electron_pressure` can be used to pass a function that computes the electron
 pressure as a function of the state `u` with the signature `electron_pressure(u, equations)`.
@@ -78,7 +89,7 @@ mutable struct IdealGlmMhdMultiIonEquations2D{NVARS, NCOMP, RealT <: Real,
     charge_to_mass::SVector{NCOMP, RealT} # Charge to mass ratios
     gas_constants::SVector{NCOMP, RealT} # Specific gas constants
     molar_masses::SVector{NCOMP, RealT} # Molar masses (can be provided in any units as they are only used to compute ratios)
-    collision_frequency::Array{RealT, 2} # Matrix of collision frequencies scaled with molecular mass of ion 1
+    ion_ion_collision_constants::Array{RealT, 2} # Symmetric matrix of collision frequency coefficients
     ion_electron_collision_constants::SVector{NCOMP, RealT} # Constants for the ion-electron collision frequencies. The collision frequency is obtained as constant * (e * n_e) / T_e^1.5
     electron_pressure::ElectronPressure # Function to compute the electron pressure
     electron_temperature::ElectronTemperature # Function to compute the electron temperature
@@ -97,7 +108,7 @@ mutable struct IdealGlmMhdMultiIonEquations2D{NVARS, NCOMP, RealT <: Real,
                                                                  molar_masses
                                                                  ::SVector{NCOMP,
                                                                            RealT},
-                                                                 collision_frequency
+                                                                 ion_ion_collision_constants
                                                                  ::Array{RealT, 2},
                                                                  ion_electron_collision_constants
                                                                  ::SVector{NCOMP,
@@ -111,7 +122,8 @@ mutable struct IdealGlmMhdMultiIonEquations2D{NVARS, NCOMP, RealT <: Real,
         NCOMP >= 1 ||
             throw(DimensionMismatch("`gammas` and `charge_to_mass` have to be filled with at least one value"))
 
-        new(gammas, charge_to_mass, gas_constants, molar_masses, collision_frequency,
+        new(gammas, charge_to_mass, gas_constants, molar_masses,
+            ion_ion_collision_constants,
             ion_electron_collision_constants, electron_pressure, electron_temperature,
             c_h)
     end
@@ -122,9 +134,9 @@ function IdealGlmMhdMultiIonEquations2D(; gammas, charge_to_mass,
                                                                      eltype(gammas)}),
                                         molar_masses = zero(SVector{length(gammas),
                                                                     eltype(gammas)}),
-                                        collision_frequency = zeros(eltype(gammas),
-                                                                    length(gammas),
-                                                                    length(gammas)),
+                                        ion_ion_collision_constants = zeros(eltype(gammas),
+                                                                            length(gammas),
+                                                                            length(gammas)),
                                         ion_electron_collision_constants = zero(SVector{length(gammas),
                                                                                         eltype(gammas)}),
                                         electron_pressure = electron_pressure_zero,
@@ -137,13 +149,13 @@ function IdealGlmMhdMultiIonEquations2D(; gammas, charge_to_mass,
     _ion_electron_collision_constants = promote(ion_electron_collision_constants...)
     RealT = promote_type(eltype(_gammas), eltype(_charge_to_mass),
                          eltype(_gas_constants), eltype(_molar_masses),
-                         eltype(collision_frequency),
+                         eltype(ion_ion_collision_constants),
                          eltype(_ion_electron_collision_constants))
     __gammas = SVector(map(RealT, _gammas))
     __charge_to_mass = SVector(map(RealT, _charge_to_mass))
     __gas_constants = SVector(map(RealT, _gas_constants))
     __molar_masses = SVector(map(RealT, _molar_masses))
-    __collision_frequency = map(RealT, collision_frequency)
+    __ion_ion_collision_constants = map(RealT, ion_ion_collision_constants)
     __ion_electron_collision_constants = SVector(map(RealT,
                                                      _ion_electron_collision_constants))
 
@@ -156,7 +168,7 @@ function IdealGlmMhdMultiIonEquations2D(; gammas, charge_to_mass,
                                                                         __charge_to_mass,
                                                                         __gas_constants,
                                                                         __molar_masses,
-                                                                        __collision_frequency,
+                                                                        __ion_ion_collision_constants,
                                                                         __ion_electron_collision_constants,
                                                                         electron_pressure,
                                                                         electron_temperature,
@@ -165,7 +177,7 @@ end
 
 # Outer constructor for `@reset` works correctly
 function IdealGlmMhdMultiIonEquations2D(gammas, charge_to_mass, gas_constants,
-                                        molar_masses, collision_frequency,
+                                        molar_masses, ion_ion_collision_constants,
                                         ion_electron_collision_constants,
                                         electron_pressure,
                                         electron_temperature,
@@ -174,7 +186,7 @@ function IdealGlmMhdMultiIonEquations2D(gammas, charge_to_mass, gas_constants,
                                           charge_to_mass = charge_to_mass,
                                           gas_constants = gas_constants,
                                           molar_masses = molar_masses,
-                                          collision_frequency = collision_frequency,
+                                          ion_ion_collision_constants = ion_ion_collision_constants,
                                           ion_electron_collision_constants = ion_electron_collision_constants,
                                           electron_pressure = electron_pressure,
                                           electron_temperature = electron_temperature,
