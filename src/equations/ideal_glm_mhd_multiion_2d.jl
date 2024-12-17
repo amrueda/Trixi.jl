@@ -84,7 +84,6 @@ mutable struct IdealGlmMhdMultiIonEquations2D{NVARS, NCOMP, RealT <: Real,
     end
 end
 
-# TODO: Add default values
 function IdealGlmMhdMultiIonEquations2D(; gammas, charge_to_mass,
                                         gas_constants = zero(SVector{length(gammas),
                                                                      eltype(gammas)}),

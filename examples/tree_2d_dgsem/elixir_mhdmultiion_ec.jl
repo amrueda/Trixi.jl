@@ -4,7 +4,6 @@ using Trixi
 
 ###############################################################################
 # semidiscretization of the ideal multi-ion MHD equations
-# TODO: remove un-needed parameters and add test for collisions
 equations = IdealGlmMhdMultiIonEquations2D(gammas = (1.4, 1.667),
                                            charge_to_mass = (1.0, 2.0))
 
