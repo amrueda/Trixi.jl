@@ -128,8 +128,12 @@ function initial_condition_weak_blast_wave(x, t,
     prim[2] = 1
     prim[3] = 1
     for k in eachcomponent(equations)
+        # We initialize each species with a fraction of the total density `rho`, such
+        # that the sum of the densities is `rho := density(prim, equations)`. The density of
+        # a species is double the density of the next species.
+        fraction = 2^(k - 1) * (1 - 2) / (1 - 2^ncomponents(equations))
         set_component!(prim, k,
-                       2^(k - 1) * (1 - 2) / (1 - 2^ncomponents(equations)) * rho, v1,
+                       fraction * rho, v1,
                        v2, 0, p, equations)
     end
 
@@ -828,10 +832,9 @@ end
         v1 = rho_v1 * rho_inv
         v2 = rho_v2 * rho_inv
         v3 = rho_v3 * rho_inv
-        v_mag = sqrt(v1^2 + v2^2 + v3^2)
         gamma = equations.gammas[k]
         p = (gamma - 1) *
-            (rho_e - 0.5f0 * rho * v_mag^2 - 0.5f0 * (B1^2 + B2^2 + B3^2) -
+            (rho_e - 0.5f0 * rho * (v1^2 + v2^2 + v3^2) - 0.5f0 * (B1^2 + B2^2 + B3^2) -
              0.5f0 * psi^2)
         a_square = gamma * p * rho_inv
         inv_sqrt_rho = 1 / sqrt(rho)

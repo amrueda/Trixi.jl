@@ -33,7 +33,8 @@ using Reexport: @reexport
 # as long as HDF5.jl uses Requires.jl to enable parallel HDF5 with MPI
 using MPI: MPI
 
-using SciMLBase: CallbackSet, DiscreteCallback,
+@reexport using SciMLBase: CallbackSet
+using SciMLBase: DiscreteCallback,
                  ODEProblem, ODESolution,
                  SplitODEProblem
 import SciMLBase: get_du, get_tmp_cache, u_modified!,
@@ -157,7 +158,7 @@ export AcousticPerturbationEquations2D,
        CompressibleEulerEquationsQuasi1D,
        IdealGlmMhdEquations1D, IdealGlmMhdEquations2D, IdealGlmMhdEquations3D,
        IdealGlmMhdMulticomponentEquations1D, IdealGlmMhdMulticomponentEquations2D,
-       IdealGlmMhdMultiIonEquations2D,
+       IdealGlmMhdMultiIonEquations2D, IdealGlmMhdMultiIonEquations3D,
        HyperbolicDiffusionEquations1D, HyperbolicDiffusionEquations2D,
        HyperbolicDiffusionEquations3D,
        LinearScalarAdvectionEquation1D, LinearScalarAdvectionEquation2D,
