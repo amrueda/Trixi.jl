@@ -272,6 +272,30 @@ end
     return SVector(cons)
 end
 
+# Computes the sum of the densities times the sum of the pressures
+@inline function density_pressure(u, equations::AbstractIdealGlmMhdMultiIonEquations)
+    B1, B2, B3 = magnetic_field(u, equations)
+    psi = divergence_cleaning_field(u, equations)
+
+    rho_total = zero(real(equations))
+    p_total = zero(real(equations))
+    for k in eachcomponent(equations)
+        rho, rho_v1, rho_v2, rho_v3, rho_e = get_component(k, u, equations)
+        rho_inv = 1 / rho
+        v1 = rho_v1 * rho_inv
+        v2 = rho_v2 * rho_inv
+        v3 = rho_v3 * rho_inv
+        gamma = equations.gammas[k]
+
+        p = (gamma - 1) *
+            (rho_e - 0.5 * rho * (v1^2 + v2^2 + v3^2) - 0.5 * (B1^2 + B2^2 + B3^2) - 0.5 * psi^2)
+
+        rho_total += rho
+        p_total += p
+    end
+    return rho_total * p_total
+end
+
 # Specialization of [`DissipationLaxFriedrichsEntropyVariables`](@ref) for the multi-ion GLM-MHD equations
 # For details on the multi-ion entropy Jacobian ``H`` see
 # - A. Rueda-Ramírez, A. Sikstel, G. Gassner, An Entropy-Stable Discontinuous Galerkin Discretization
