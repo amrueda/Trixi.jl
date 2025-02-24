@@ -1444,12 +1444,17 @@ end
             (rho_e - 0.5f0 * rho * (v1^2 + v2^2 + v3^2) - 0.5f0 * (B1^2 + B2^2 + B3^2) -
              0.5f0 * psi^2)
         a_square = gamma * p * rho_inv
-        inv_sqrt_rho = 1 / sqrt(rho)
 
-        b1 = B1 * inv_sqrt_rho
-        b2 = B2 * inv_sqrt_rho
-        b3 = B3 * inv_sqrt_rho
-        b_square = b1^2 + b2^2 + b3^2
+        if isapprox(equations.charge_to_mass[k], 0.0)
+            b_square = b1 = b2 = b3 = 0.0
+        else
+            inv_sqrt_rho = 1 / sqrt(rho)
+
+            b1 = B1 * inv_sqrt_rho
+            b2 = B2 * inv_sqrt_rho
+            b3 = B3 * inv_sqrt_rho
+            b_square = b1^2 + b2^2 + b3^2
+        end
 
         if orientation == 1
             c_f = max(c_f,
@@ -1494,15 +1499,21 @@ end
             (rho_e - 0.5f0 * rho * (v1^2 + v2^2 + v3^2) - 0.5f0 * (B1^2 + B2^2 + B3^2) -
              0.5f0 * psi^2)
         a_square = gamma * p * rho_inv
-        inv_sqrt_rho = 1 / sqrt(rho)
 
-        b1 = B1 * inv_sqrt_rho
-        b2 = B2 * inv_sqrt_rho
-        b3 = B3 * inv_sqrt_rho
-        b_square = b1^2 + b2^2 + b3^2
-        b_dot_n_squared = (b1 * normal_direction[1] +
-                           b2 * normal_direction[2] +
-                           b3 * normal_direction[3])^2 / norm_squared
+        if isapprox(equations.charge_to_mass[k], 0.0)
+            b_square = 0.0
+            b_dot_n_squared = 0.0
+        else
+            inv_sqrt_rho = 1 / sqrt(rho)
+
+            b1 = B1 * inv_sqrt_rho
+            b2 = B2 * inv_sqrt_rho
+            b3 = B3 * inv_sqrt_rho
+            b_square = b1^2 + b2^2 + b3^2
+            b_dot_n_squared = (b1 * normal_direction[1] +
+                            b2 * normal_direction[2] +
+                            b3 * normal_direction[3])^2 / norm_squared
+        end
 
         c_f = max(c_f,
                   sqrt((0.5f0 * (a_square + b_square) +
