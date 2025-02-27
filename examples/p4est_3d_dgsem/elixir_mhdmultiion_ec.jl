@@ -55,7 +55,7 @@ end
 
 trees_per_dimension = (8, 8, 8)
 mesh = P4estMesh(trees_per_dimension,
-                 polydeg = 3, initial_refinement_level = 0, mapping = mapping,
+                 polydeg = 3, mapping = mapping,
                  periodicity = true)
 
 semi = SemidiscretizationHyperbolic(mesh, equations, initial_condition, solver,
@@ -96,4 +96,3 @@ callbacks = CallbackSet(summary_callback,
 sol = solve(ode, CarpenterKennedy2N54(williamson_condition = false);
             dt = 1.0, # solve needs some value here but it will be overwritten by the stepsize_callback
             ode_default_options()..., callback = callbacks);
-summary_callback() # print the timer summary
