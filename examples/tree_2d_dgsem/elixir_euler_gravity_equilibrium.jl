@@ -18,12 +18,12 @@ end
 
 initial_condition = initial_condition_constant
 
-volume_flux = (flux_ranocha, flux_nonconservative_waruszewski)
-surface_flux = (flux_ranocha, flux_nonconservative_waruszewski)
+volume_flux = (flux_shima_etal, flux_nonconservative_waruszewski)
+#surface_flux = (flux_shima_etal, flux_nonconservative_waruszewski)
 #surface_flux = (flux_lax_friedrichs, flux_nonconservative_waruszewski) # bas
-# surface_flux = (FluxPlusDissipation{typeof(flux_central),
-#                                     DissipationLocalLaxFriedrichs{MaxAbsSpeed}},
-#                 flux_nonconservative_waruszewski)
+surface_flux = (FluxPlusDissipation(flux_shima_etal,
+                                    DissipationLocalLaxFriedrichs(max_abs_speed_naive)),
+                flux_nonconservative_waruszewski)
 polydeg = 3
 solver = DGSEM(polydeg = polydeg, surface_flux = surface_flux,
                volume_integral = VolumeIntegralFluxDifferencing(volume_flux))
