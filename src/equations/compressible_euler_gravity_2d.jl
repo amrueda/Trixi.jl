@@ -501,7 +501,7 @@
         rho_rr, _, _, _, phi_rr = u_rr
 
         # We omit the 0.5 in the density average since Trixi.jl always multiplies the non-conservative flux with 0.5
-        noncons = (rho_ll + rho_rr) * (phi_rr - phi_ll)
+        noncons = ln_mean(rho_ll, rho_rr) * (phi_rr - phi_ll)
 
         f0 = zero(eltype(u_ll))
         return SVector(f0, noncons * normal_direction[1], noncons * normal_direction[2],
@@ -514,7 +514,7 @@
         rho_rr, _, _, _, phi_rr = u_rr
 
         # We omit the 0.5 in the density average since Trixi.jl always multiplies the non-conservative flux with 0.5
-        noncons = 0.5 * (rho_ll + rho_rr) * (phi_rr - phi_ll)
+        noncons = ln_mean(rho_ll, rho_rr) * (phi_rr - phi_ll)
 
         f0 = zero(eltype(u_ll))
         if orientation == 1

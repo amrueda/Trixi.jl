@@ -18,13 +18,14 @@ end
 
 initial_condition = initial_condition_constant
 
-volume_flux = (flux_kennedy_gruber, flux_nonconservative_waruszewski)
-surface_flux = (flux_kennedy_gruber, flux_nonconservative_waruszewski)
+volume_flux = (flux_ranocha, flux_nonconservative_waruszewski)
+surface_flux = (flux_ranocha, flux_nonconservative_waruszewski)
 #surface_flux = (flux_lax_friedrichs, flux_nonconservative_waruszewski) # bas
 # surface_flux = (FluxPlusDissipation{typeof(flux_central),
 #                                     DissipationLocalLaxFriedrichs{MaxAbsSpeed}},
 #                 flux_nonconservative_waruszewski)
-solver = DGSEM(polydeg = 3, surface_flux = surface_flux,
+polydeg = 3
+solver = DGSEM(polydeg = polydeg, surface_flux = surface_flux,
                volume_integral = VolumeIntegralFluxDifferencing(volume_flux))
 
 coordinates_min = (0.0, 0.0)
@@ -51,7 +52,8 @@ ode = semidiscretize(semi, tspan)
 summary_callback = SummaryCallback()
 
 analysis_interval = 1
-analysis_callback = AnalysisCallback(semi, interval = analysis_interval)
+analysis_callback = AnalysisCallback(semi, interval = analysis_interval,
+                                     analysis_polydeg = polydeg)
 
 alive_callback = AliveCallback(analysis_interval = analysis_interval)
 
@@ -73,4 +75,3 @@ callbacks = CallbackSet(summary_callback,
 sol = solve(ode, CarpenterKennedy2N54(williamson_condition = false),
             dt = 1.0, # solve needs some value here but it will be overwritten by the stepsize_callback
             save_everystep = false, callback = callbacks);
-summary_callback() # print the timer summary
