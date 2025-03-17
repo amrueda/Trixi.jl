@@ -505,7 +505,7 @@
 
         f0 = zero(eltype(u_ll))
         return SVector(f0, noncons * normal_direction[1], noncons * normal_direction[2],
-                       noncons * normal_direction[3], f0)
+                       f0, f0)
     end
 
     function flux_nonconservative_waruszewski(u_ll, u_rr, orientation::Integer,
