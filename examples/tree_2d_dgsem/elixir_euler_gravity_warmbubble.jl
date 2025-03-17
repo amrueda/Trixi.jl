@@ -83,9 +83,11 @@ initial_condition = warm_bubble_setup
 volume_flux = (flux_kennedy_gruber, flux_nonconservative_waruszewski)
 #surface_flux = (flux_shima_etal, flux_nonconservative_waruszewski)
 # surface_flux = (flux_lax_friedrichs, flux_nonconservative_waruszewski) # bas
-surface_flux = (FluxPlusDissipation(flux_kennedy_gruber,
-                                    DissipationLocalLaxFriedrichs(max_abs_speed_naive)),
-                flux_nonconservative_waruszewski)
+surface_flux = (flux_hllc, flux_nonconservative_waruszewski)
+
+# surface_flux = (FluxPlusDissipation(FluxLMARS(340.0),
+#                                     DissipationLocalLaxFriedrichs(max_abs_speed_naive)),
+#                 flux_nonconservative_waruszewski)
 # volume_flux = (flux_central, flux_nonconservative_waruszewski)
 # surface_flux = (flux_lax_friedrichs, flux_nonconservative_waruszewski)
 
@@ -122,7 +124,7 @@ analysis_callback = AnalysisCallback(semi, interval = analysis_interval,
 
 alive_callback = AliveCallback(analysis_interval = analysis_interval)
 
-save_solution = SaveSolutionCallback(dt = 5.0, #interval = 1, #dt = 10.0,
+save_solution = SaveSolutionCallback(dt = 10.0, #interval = 1, #dt = 10.0,
                                      save_initial_solution = true,
                                      save_final_solution = true,
                                      solution_variables = cons2prim)
