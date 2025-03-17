@@ -190,10 +190,10 @@
     # Calculate 2D flux for a single point
     @inline function flux(u, orientation::Integer,
                           equations::CompressibleEulerEquationsWithGravity2D)
-        rho, rho_v1, rho_v2, rho_e, _ = u
+        rho, rho_v1, rho_v2, rho_e, phi = u
         v1 = rho_v1 / rho
         v2 = rho_v2 / rho
-        p = (equations.gamma - 1) * (rho_e - 0.5 * (rho_v1 * v1 + rho_v2 * v2))
+        p = (equations.gamma - 1) * (rho_e - 0.5 * (rho_v1 * v1 + rho_v2 * v2) - rho * phi)
         if orientation == 1
             f1 = rho_v1
             f2 = rho_v1 * v1 + p
