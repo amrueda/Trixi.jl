@@ -88,7 +88,7 @@
 
     Details about the 1D pressure Riemann solution can be found in Section 6.3.3 of the book
     - Eleuterio F. Toro (2009)
-      Riemann Solvers and Numerical Methods for Fluid Dynamics: A Pratical Introduction
+      Riemann Solvers and Numerical Methods for Fluid Dynamics: A Practical Introduction
       3rd edition
       [DOI: 10.1007/b79761](https://doi.org/10.1007/b79761)
 
@@ -522,6 +522,95 @@
         else #if orientation == 2
             return SVector(f0, f0, noncons, f0, f0)
         end
+    end
+
+    """
+        FluxLMARS(c)(u_ll, u_rr, orientation_or_normal_direction,
+                     equations::CompressibleEulerEquationsWithGravity2D)
+
+    Low Mach number approximate Riemann solver (LMARS) for atmospheric flows using
+    an estimate `c` of the speed of sound.
+
+    References:
+    - Xi Chen et al. (2013)
+      A Control-Volume Model of the Compressible Euler Equations with a Vertical
+      Lagrangian Coordinate
+      [DOI: 10.1175/MWR-D-12-00129.1](https://doi.org/10.1175/mwr-d-12-00129.1)
+    """
+    # The struct is already defined in CompressibleEulerEquations2D
+
+    @inline function (flux_lmars::FluxLMARS)(u_ll, u_rr, orientation::Integer,
+                                             equations::CompressibleEulerEquationsWithGravity2D)
+        c = flux_lmars.speed_of_sound
+
+        # Unpack left and right state
+        rho_ll, v1_ll, v2_ll, p_ll, phi_ll = cons2prim(u_ll, equations)
+        rho_rr, v1_rr, v2_rr, p_rr, phi_rr = cons2prim(u_rr, equations)
+
+        if orientation == 1
+            v_ll = v1_ll
+            v_rr = v1_rr
+        else # orientation == 2
+            v_ll = v2_ll
+            v_rr = v2_rr
+        end
+
+        rho = 0.5f0 * (rho_ll + rho_rr)
+        p = 0.5f0 * (p_ll + p_rr) - 0.5f0 * c * rho * (v_rr - v_ll)
+        v = 0.5f0 * (v_ll + v_rr) - 1 / (2 * c * rho) * (p_rr - p_ll)
+
+        # We treat the energy term analogous to the potential temperature term in the paper by
+        # Chen et al., i.e. we use p_ll and p_rr, and not p
+        if v >= 0
+            f1, f2, f3, f4, _ = v * u_ll
+            f4 = f4 + p_ll * v
+        else
+            f1, f2, f3, f4, _ = v * u_rr
+            f4 = f4 + p_rr * v
+        end
+
+        if orientation == 1
+            f2 = f2 + p
+        else # orientation == 2
+            f3 = f3 + p
+        end
+
+        return SVector(f1, f2, f3, f4, zero(eltype(u_ll)))
+    end
+
+    @inline function (flux_lmars::FluxLMARS)(u_ll, u_rr, normal_direction::AbstractVector,
+                                             equations::CompressibleEulerEquationsWithGravity2D)
+        c = flux_lmars.speed_of_sound
+
+        # Unpack left and right state
+        rho_ll, v1_ll, v2_ll, p_ll, phi_ll = cons2prim(u_ll, equations)
+        rho_rr, v1_rr, v2_rr, p_rr, phi_rr = cons2prim(u_rr, equations)
+
+        v_ll = v1_ll * normal_direction[1] + v2_ll * normal_direction[2]
+        v_rr = v1_rr * normal_direction[1] + v2_rr * normal_direction[2]
+
+        # Note that this is the same as computing v_ll and v_rr with a normalized normal vector
+        # and then multiplying v by `norm_` again, but this version is slightly faster.
+        norm_ = norm(normal_direction)
+
+        rho = 0.5f0 * (rho_ll + rho_rr)
+        p = 0.5f0 * (p_ll + p_rr) - 0.5f0 * c * rho * (v_rr - v_ll) / norm_
+        v = 0.5f0 * (v_ll + v_rr) - 1 / (2 * c * rho) * (p_rr - p_ll) * norm_
+
+        # We treat the energy term analogous to the potential temperature term in the paper by
+        # Chen et al., i.e. we use p_ll and p_rr, and not p
+        if v >= 0
+            f1, f2, f3, f4, _ = u_ll * v
+            f4 = f4 + p_ll * v
+        else
+            f1, f2, f3, f4, _ = u_rr * v
+            f4 = f4 + p_rr * v
+        end
+
+        return SVector(f1,
+                       f2 + p * normal_direction[1],
+                       f3 + p * normal_direction[2],
+                       f4, zero(eltype(u_ll)))
     end
 
     # Calculate maximum wave speed for local Lax-Friedrichs-type dissipation as the
