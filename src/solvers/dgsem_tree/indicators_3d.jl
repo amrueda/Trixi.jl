@@ -101,7 +101,8 @@ end
     alpha[element] = min(alpha_max, alpha_element)
 end
 
-function apply_smoothing!(mesh::Union{TreeMesh{3}, P4estMesh{3}}, alpha, alpha_tmp, dg,
+function apply_smoothing!(mesh::Union{TreeMesh{3}, P4estMesh{3}, T8codeMesh{3}}, alpha,
+                          alpha_tmp, dg,
                           cache)
 
     # Diffuse alpha values by setting each alpha to at least 50% of neighboring elements' alpha
@@ -115,8 +116,8 @@ function apply_smoothing!(mesh::Union{TreeMesh{3}, P4estMesh{3}}, alpha, alpha_t
         right = cache.interfaces.neighbor_ids[2, interface]
 
         # Apply smoothing
-        alpha[left] = max(alpha_tmp[left], 0.5 * alpha_tmp[right], alpha[left])
-        alpha[right] = max(alpha_tmp[right], 0.5 * alpha_tmp[left], alpha[right])
+        alpha[left] = max(alpha_tmp[left], 0.5f0 * alpha_tmp[right], alpha[left])
+        alpha[right] = max(alpha_tmp[right], 0.5f0 * alpha_tmp[left], alpha[right])
     end
 
     # Loop over L2 mortars
@@ -129,19 +130,23 @@ function apply_smoothing!(mesh::Union{TreeMesh{3}, P4estMesh{3}}, alpha, alpha_t
         large = cache.mortars.neighbor_ids[5, mortar]
 
         # Apply smoothing
-        alpha[lower_left] = max(alpha_tmp[lower_left], 0.5 * alpha_tmp[large],
+        alpha[lower_left] = max(alpha_tmp[lower_left], 0.5f0 * alpha_tmp[large],
                                 alpha[lower_left])
-        alpha[lower_right] = max(alpha_tmp[lower_right], 0.5 * alpha_tmp[large],
+        alpha[lower_right] = max(alpha_tmp[lower_right], 0.5f0 * alpha_tmp[large],
                                  alpha[lower_right])
-        alpha[upper_left] = max(alpha_tmp[upper_left], 0.5 * alpha_tmp[large],
+        alpha[upper_left] = max(alpha_tmp[upper_left], 0.5f0 * alpha_tmp[large],
                                 alpha[upper_left])
-        alpha[upper_right] = max(alpha_tmp[upper_right], 0.5 * alpha_tmp[large],
+        alpha[upper_right] = max(alpha_tmp[upper_right], 0.5f0 * alpha_tmp[large],
                                  alpha[upper_right])
 
-        alpha[large] = max(alpha_tmp[large], 0.5 * alpha_tmp[lower_left], alpha[large])
-        alpha[large] = max(alpha_tmp[large], 0.5 * alpha_tmp[lower_right], alpha[large])
-        alpha[large] = max(alpha_tmp[large], 0.5 * alpha_tmp[upper_left], alpha[large])
-        alpha[large] = max(alpha_tmp[large], 0.5 * alpha_tmp[upper_right], alpha[large])
+        alpha[large] = max(alpha_tmp[large], 0.5f0 * alpha_tmp[lower_left],
+                           alpha[large])
+        alpha[large] = max(alpha_tmp[large], 0.5f0 * alpha_tmp[lower_right],
+                           alpha[large])
+        alpha[large] = max(alpha_tmp[large], 0.5f0 * alpha_tmp[upper_left],
+                           alpha[large])
+        alpha[large] = max(alpha_tmp[large], 0.5f0 * alpha_tmp[upper_right],
+                           alpha[large])
     end
 end
 
@@ -168,6 +173,7 @@ function (löhner::IndicatorLöhner)(u::AbstractArray{<:Any, 5},
                                    kwargs...)
     @assert nnodes(dg)>=3 "IndicatorLöhner only works for nnodes >= 3 (polydeg > 1)"
     @unpack alpha, indicator_threaded = löhner.cache
+    @unpack variable = löhner
     resize!(alpha, nelements(dg, cache))
 
     @threaded for element in eachelement(dg, cache)
@@ -176,7 +182,7 @@ function (löhner::IndicatorLöhner)(u::AbstractArray{<:Any, 5},
         # Calculate indicator variables at Gauss-Lobatto nodes
         for k in eachnode(dg), j in eachnode(dg), i in eachnode(dg)
             u_local = get_node_vars(u, equations, dg, i, j, k, element)
-            indicator[i, j, k] = löhner.variable(u_local, equations)
+            indicator[i, j, k] = variable(u_local, equations)
         end
 
         estimate = zero(real(dg))
@@ -234,6 +240,7 @@ function (indicator_max::IndicatorMax)(u::AbstractArray{<:Any, 5},
                                        kwargs...)
     @unpack alpha, indicator_threaded = indicator_max.cache
     resize!(alpha, nelements(dg, cache))
+    indicator_variable = indicator_max.variable
 
     @threaded for element in eachelement(dg, cache)
         indicator = indicator_threaded[Threads.threadid()]
@@ -241,7 +248,7 @@ function (indicator_max::IndicatorMax)(u::AbstractArray{<:Any, 5},
         # Calculate indicator variables at Gauss-Lobatto nodes
         for k in eachnode(dg), j in eachnode(dg), i in eachnode(dg)
             u_local = get_node_vars(u, equations, dg, i, j, k, element)
-            indicator[i, j, k] = indicator_max.variable(u_local, equations)
+            indicator[i, j, k] = indicator_variable(u_local, equations)
         end
 
         alpha[element] = maximum(indicator)

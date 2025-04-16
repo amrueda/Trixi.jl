@@ -42,6 +42,18 @@ Common choices of the `conversion_function` are [`cons2cons`](@ref) and
 """
 function varnames end
 
+# Return the index of `varname` in `varnames(solution_variables, equations)` if available.
+# Otherwise, throw an error.
+function get_variable_index(varname, equations;
+                            solution_variables = cons2cons)
+    index = findfirst(==(varname), varnames(solution_variables, equations))
+    if isnothing(index)
+        throw(ArgumentError("$varname is no valid variable."))
+    end
+
+    return index
+end
+
 # Add methods to show some information on systems of equations.
 function Base.show(io::IO, equations::AbstractEquations)
     # Since this is not performance-critical, we can use `@nospecialize` to reduce latency.
@@ -75,8 +87,11 @@ end
 
 @inline Base.ndims(::AbstractEquations{NDIMS}) where {NDIMS} = NDIMS
 
-# equations act like scalars in broadcasting
-Base.broadcastable(equations::AbstractEquations) = Ref(equations)
+# Equations act like scalars in broadcasting.
+# The manual recommends `Ref`, but a single-argument tuple is morally equivalent.
+# For code that is allocation sensitive tuple is preferable, since `Ref` relies on the optimizer
+# to prove it non-escaping which is more precarious than just using an immutable tuple.
+Base.broadcastable(equations::AbstractEquations) = (equations,)
 
 """
     flux(u, orientation_or_normal, equations)
@@ -166,6 +181,36 @@ end
     return flux
 end
 
+# Dirichlet-type boundary condition for use with TreeMesh or StructuredMesh
+# passing a tuple of surface flux functions for nonconservative terms
+@inline function (boundary_condition::BoundaryConditionDirichlet)(u_inner,
+                                                                  orientation_or_normal,
+                                                                  direction,
+                                                                  x, t,
+                                                                  surface_flux_functions::Tuple,
+                                                                  equations)
+    surface_flux_function, nonconservative_flux_function = surface_flux_functions
+
+    u_boundary = boundary_condition.boundary_value_function(x, t, equations)
+
+    # Calculate boundary flux
+    if iseven(direction) # u_inner is "left" of boundary, u_boundary is "right" of boundary
+        flux = surface_flux_function(u_inner, u_boundary, orientation_or_normal,
+                                     equations)
+        noncons_flux = nonconservative_flux_function(u_inner, u_boundary,
+                                                     orientation_or_normal,
+                                                     equations)
+    else # u_boundary is "left" of boundary, u_inner is "right" of boundary
+        flux = surface_flux_function(u_boundary, u_inner, orientation_or_normal,
+                                     equations)
+        noncons_flux = nonconservative_flux_function(u_boundary, u_inner,
+                                                     orientation_or_normal,
+                                                     equations)
+    end
+
+    return flux, noncons_flux
+end
+
 # Dirichlet-type boundary condition for use with UnstructuredMesh2D
 # Note: For unstructured we lose the concept of an "absolute direction"
 @inline function (boundary_condition::BoundaryConditionDirichlet)(u_inner,
@@ -180,6 +225,26 @@ end
     flux = surface_flux_function(u_inner, u_boundary, normal_direction, equations)
 
     return flux
+end
+
+# Dirichlet-type boundary condition for equations with non-conservative terms for use with UnstructuredMesh2D
+# passing a tuple of surface flux functions for nonconservative terms
+# Note: For unstructured we lose the concept of an "absolute direction"
+@inline function (boundary_condition::BoundaryConditionDirichlet)(u_inner,
+                                                                  normal_direction::AbstractVector,
+                                                                  x, t,
+                                                                  surface_flux_functions::Tuple,
+                                                                  equations)
+    surface_flux_function, nonconservative_flux_function = surface_flux_functions
+
+    # get the external value of the solution
+    u_boundary = boundary_condition.boundary_value_function(x, t, equations)
+
+    # Calculate boundary flux
+    flux = surface_flux_function(u_inner, u_boundary, normal_direction, equations)
+    noncons_flux = nonconservative_flux_function(u_inner, u_boundary, normal_direction,
+                                                 equations)
+    return flux, noncons_flux
 end
 
 # operator types used for dispatch on parabolic boundary fluxes
@@ -202,6 +267,24 @@ struct BoundaryConditionNeumann{B}
     boundary_normal_flux_function::B
 end
 
+"""
+    NonConservativeLocal()
+
+Struct used for multiple dispatch on non-conservative flux functions in the format of "local * symmetric".
+When the argument `nonconservative_type` is of type `NonConservativeLocal`,
+the function returns the local part of the non-conservative term.
+"""
+struct NonConservativeLocal end
+
+"""
+    NonConservativeSymmetric()
+
+Struct used for multiple dispatch on non-conservative flux functions in the format of "local * symmetric".
+When the argument `nonconservative_type` is of type `NonConservativeSymmetric`,
+the function returns the symmetric part of the non-conservative term.
+"""
+struct NonConservativeSymmetric end
+
 # set sensible default values that may be overwritten by specific equations
 """
     have_nonconservative_terms(equations)
@@ -214,9 +297,24 @@ example of equations with nonconservative terms.
 The return value will be `True()` or `False()` to allow dispatching on the return type.
 """
 have_nonconservative_terms(::AbstractEquations) = False()
+"""
+    n_nonconservative_terms(equations)
+
+Number of nonconservative terms in the form local * symmetric for a particular equation.
+This function needs to be specialized only if equations with nonconservative terms are
+combined with certain solvers (e.g., subcell limiting).
+"""
+function n_nonconservative_terms end
 have_constant_speed(::AbstractEquations) = False()
 
+"""
+    default_analysis_errors(equations)
+
+Default analysis errors (`:l2_error` and `:linf_error`) used by the
+[`AnalysisCallback`](@ref).
+"""
 default_analysis_errors(::AbstractEquations) = (:l2_error, :linf_error)
+
 """
     default_analysis_integrals(equations)
 
@@ -255,6 +353,37 @@ so please make sure your input is correct.
 The inverse conversion is performed by [`cons2prim`](@ref).
 """
 function prim2cons end
+
+"""
+    velocity(u, equations)
+
+Return the velocity vector corresponding to the equations, e.g., fluid velocity for
+Euler's equations. The velocity in certain orientation or normal direction (scalar) can be computed
+with `velocity(u, orientation, equations)` or `velocity(u, normal_direction, equations)`
+respectively. The `velocity(u, normal_direction, equations)` function calls
+`velocity(u, equations)` to compute the velocity vector and then normal vector, thus allowing
+a general function to be written for the AbstractEquations type. However, the
+`velocity(u, orientation, equations)` is written for each equation separately to ensure
+only the velocity in the desired direction (orientation) is computed.
+`u` is a vector of the conserved variables at a single node, i.e., a vector
+of the correct length `nvariables(equations)`.
+"""
+function velocity end
+
+@inline function velocity(u, normal_direction::AbstractVector,
+                          equations::AbstractEquations{2})
+    vel = velocity(u, equations)
+    v = vel[1] * normal_direction[1] + vel[2] * normal_direction[2]
+    return v
+end
+
+@inline function velocity(u, normal_direction::AbstractVector,
+                          equations::AbstractEquations{3})
+    vel = velocity(u, equations)
+    v = vel[1] * normal_direction[1] + vel[2] * normal_direction[2] +
+        vel[3] * normal_direction[3]
+    return v
+end
 
 """
     entropy(u, equations)
@@ -325,6 +454,71 @@ of the correct length `nvariables(equations)`.
 """
 function energy_internal end
 
+"""
+    density(u, equations)
+
+Return the density associated to the conserved variables `u` for a given set of
+`equations`, e.g., the [`CompressibleEulerEquations2D`](@ref).
+
+`u` is a vector of the conserved variables at a single node, i.e., a vector
+of the correct length `nvariables(equations)`.
+"""
+function density end
+
+"""
+    pressure(u, equations)
+
+Return the pressure associated to the conserved variables `u` for a given set of
+`equations`, e.g., the [`CompressibleEulerEquations2D`](@ref).
+
+`u` is a vector of the conserved variables at a single node, i.e., a vector
+of the correct length `nvariables(equations)`.
+"""
+function pressure end
+
+"""
+    density_pressure(u, equations)
+
+Return the product of the [`density`](@ref) and the [`pressure`](@ref)
+associated to the conserved variables `u` for a given set of
+`equations`, e.g., the [`CompressibleEulerEquations2D`](@ref).
+This can be useful, e.g., as a variable for (shock-cappturing or AMR)
+indicators.
+
+`u` is a vector of the conserved variables at a single node, i.e., a vector
+of the correct length `nvariables(equations)`.
+"""
+function density_pressure end
+
+"""
+    waterheight(u, equations)
+
+Return the water height associated to the conserved variables `u` for a given set of
+`equations`, e.g., the [`ShallowWaterEquations2D`](@ref).
+
+`u` is a vector of the conserved variables at a single node, i.e., a vector
+of the correct length `nvariables(equations)`.
+"""
+function waterheight end
+
+"""
+    waterheight_pressure(u, equations)
+
+Return the product of the [`waterheight`](@ref) and the [`pressure`](@ref)
+associated to the conserved variables `u` for a given set of
+`equations`, e.g., the [`ShallowWaterEquations2D`](@ref).
+
+`u` is a vector of the conserved variables at a single node, i.e., a vector
+of the correct length `nvariables(equations)`.
+"""
+function waterheight_pressure end
+
+# Default implementation of gradient for `variable`. Used for subcell limiting.
+# Implementing a gradient function for a specific variable improves the performance.
+@inline function gradient_conservative(variable, u, equations)
+    return ForwardDiff.gradient(x -> variable(x, equations), u)
+end
+
 ####################################################################################################
 # Include files with actual implementations for different systems of equations.
 
@@ -348,8 +542,7 @@ abstract type AbstractShallowWaterEquations{NDIMS, NVARS} <:
               AbstractEquations{NDIMS, NVARS} end
 include("shallow_water_1d.jl")
 include("shallow_water_2d.jl")
-include("shallow_water_two_layer_1d.jl")
-include("shallow_water_two_layer_2d.jl")
+include("shallow_water_quasi_1d.jl")
 
 # CompressibleEulerEquations
 abstract type AbstractCompressibleEulerEquations{NDIMS, NVARS} <:
@@ -357,12 +550,18 @@ abstract type AbstractCompressibleEulerEquations{NDIMS, NVARS} <:
 include("compressible_euler_1d.jl")
 include("compressible_euler_2d.jl")
 include("compressible_euler_3d.jl")
+include("compressible_euler_quasi_1d.jl")
 
 # CompressibleEulerMulticomponentEquations
 abstract type AbstractCompressibleEulerMulticomponentEquations{NDIMS, NVARS, NCOMP} <:
               AbstractEquations{NDIMS, NVARS} end
 include("compressible_euler_multicomponent_1d.jl")
 include("compressible_euler_multicomponent_2d.jl")
+
+# PolytropicEulerEquations
+abstract type AbstractPolytropicEulerEquations{NDIMS, NVARS} <:
+              AbstractEquations{NDIMS, NVARS} end
+include("polytropic_euler_2d.jl")
 
 # Retrieve number of components from equation instance for the multicomponent case
 @inline function ncomponents(::AbstractCompressibleEulerMulticomponentEquations{NDIMS,
@@ -398,6 +597,13 @@ abstract type AbstractIdealGlmMhdMulticomponentEquations{NDIMS, NVARS, NCOMP} <:
 include("ideal_glm_mhd_multicomponent_1d.jl")
 include("ideal_glm_mhd_multicomponent_2d.jl")
 
+# IdealMhdMultiIonEquations
+abstract type AbstractIdealGlmMhdMultiIonEquations{NDIMS, NVARS, NCOMP} <:
+              AbstractEquations{NDIMS, NVARS} end
+include("ideal_glm_mhd_multiion.jl")
+include("ideal_glm_mhd_multiion_2d.jl")
+include("ideal_glm_mhd_multiion_3d.jl")
+
 # Retrieve number of components from equation instance for the multicomponent case
 @inline function ncomponents(::AbstractIdealGlmMhdMulticomponentEquations{NDIMS, NVARS,
                                                                           NCOMP}) where {
@@ -415,6 +621,27 @@ for the components in `AbstractIdealGlmMhdMulticomponentEquations`.
 In particular, not the components themselves are returned.
 """
 @inline function eachcomponent(equations::AbstractIdealGlmMhdMulticomponentEquations)
+    Base.OneTo(ncomponents(equations))
+end
+
+# Retrieve number of components from equation instance for the multi-ion case
+@inline function ncomponents(::AbstractIdealGlmMhdMultiIonEquations{NDIMS, NVARS,
+                                                                    NCOMP}) where {
+                                                                                   NDIMS,
+                                                                                   NVARS,
+                                                                                   NCOMP
+                                                                                   }
+    NCOMP
+end
+
+"""
+    eachcomponent(equations::AbstractIdealGlmMhdMultiIonEquations)
+
+Return an iterator over the indices that specify the location in relevant data structures
+for the components in `AbstractIdealGlmMhdMultiIonEquations`.
+In particular, not the components themselves are returned.
+"""
+@inline function eachcomponent(equations::AbstractIdealGlmMhdMultiIonEquations)
     Base.OneTo(ncomponents(equations))
 end
 
@@ -439,8 +666,19 @@ include("acoustic_perturbation_2d.jl")
 # Linearized Euler equations
 abstract type AbstractLinearizedEulerEquations{NDIMS, NVARS} <:
               AbstractEquations{NDIMS, NVARS} end
+include("linearized_euler_1d.jl")
 include("linearized_euler_2d.jl")
+include("linearized_euler_3d.jl")
 
-abstract type AbstractEquationsParabolic{NDIMS, NVARS} <:
+abstract type AbstractEquationsParabolic{NDIMS, NVARS, GradientVariables} <:
               AbstractEquations{NDIMS, NVARS} end
+
+# Lighthill-Witham-Richards (LWR) traffic flow model
+abstract type AbstractTrafficFlowLWREquations{NDIMS, NVARS} <:
+              AbstractEquations{NDIMS, NVARS} end
+include("traffic_flow_lwr_1d.jl")
+
+abstract type AbstractMaxwellEquations{NDIMS, NVARS} <:
+              AbstractEquations{NDIMS, NVARS} end
+include("maxwell_1d.jl")
 end # @muladd

@@ -34,7 +34,7 @@ Hence, you should at least investigate the performance roughly by comparing the 
 timings of several elixirs. Deeper investigations and micro-benchmarks should usually use
 [BenchmarkTools.jl](https://github.com/JuliaCI/BenchmarkTools.jl).
 For example, the following steps were used to benchmark the changes introduced in
-https://github.com/trixi-framework/Trixi.jl/pull/256.
+[PR #256](https://github.com/trixi-framework/Trixi.jl/pull/256).
 
 1. `git checkout e7ebf3846b3fd62ee1d0042e130afb50d7fe8e48` (new version)
 2. Start `julia --threads=1 --check-bounds=no`.
@@ -42,7 +42,8 @@ https://github.com/trixi-framework/Trixi.jl/pull/256.
    ```julia
    julia> using BenchmarkTools, Revise; using Trixi
 
-   julia> trixi_include("examples/2d/elixir_euler_sedov_blast_wave.jl")
+   julia> # nowadays "examples/tree_2d_dgsem/elixir_euler_sedov_blast_wave.jl"
+          trixi_include("examples/2d/elixir_euler_sedov_blast_wave.jl")
 
    julia> du_test = copy(sol.u[end]); u_test = copy(sol.u[end]);
 
@@ -65,7 +66,8 @@ https://github.com/trixi-framework/Trixi.jl/pull/256.
 
    shell> git checkout 222241ff54f8a4ca9876cc1fc25ae262416a4ea0
 
-   julia> trixi_include("examples/2d/elixir_euler_sedov_blast_wave.jl")
+   julia> # nowadays "examples/tree_2d_dgsem/elixir_euler_sedov_blast_wave.jl"
+          trixi_include("examples/2d/elixir_euler_sedov_blast_wave.jl")
 
    julia> @benchmark Trixi.rhs!(
              $(du_test),
@@ -85,6 +87,10 @@ https://github.com/trixi-framework/Trixi.jl/pull/256.
     evals/sample:     1
    ```
    Run the `@benchmark ...` commands multiple times to see whether there are any significant fluctuations.
+   Note that the elixir name has changed since
+   [PR #256](https://github.com/trixi-framework/Trixi.jl/pull/256).
+   Nowadays, the relevant elixir is
+   [`examples/tree_2d_dgsem/elixir_euler_sedov_blast_wave.jl`](https://github.com/trixi-framework/Trixi.jl/blob/main/examples/tree_2d_dgsem/elixir_euler_sedov_blast_wave.jl).
 
 Follow these steps for both commits you want to compare. The relevant benchmark results you should typically be looking at
 are the median and mean values of the runtime and the memory/allocs estimate. In this example, the differences
@@ -106,7 +112,22 @@ resulting performance improvements of Trixi.jl are given in the following blog p
 We use [PkgBenchmark.jl](https://github.com/JuliaCI/PkgBenchmark.jl) to provide a standard set of
 benchmarks for Trixi.jl. The relevant benchmark script is
 [benchmark/benchmarks.jl](https://github.com/trixi-framework/Trixi.jl/blob/main/benchmark/benchmarks.jl).
-You can run a standard set of benchmarks via
+To benchmark the changes made in a PR, please proceed as follows:
+
+1. Check out the latest `main` branch of your Trixi.jl development repository.
+2. Check out the latest development branch of your PR.
+3. Change your working directory to the `benchmark` directory of Trixi.jl.
+4. Execute `julia run_benchmarks.jl`.
+
+This will take some hours to complete and requires at least 8 GiB of RAM. When everything is finished, some
+output files will be created in the `benchmark` directory of Trixi.jl.
+
+!!! warning
+    Please note that the benchmark scripts use `--check-bounds=no` at the moment.
+    Thus, they will not work in any useful way for Julia v1.10 (and newer?), see
+    [Julia issue #50985](https://github.com/JuliaLang/julia/issues/50985).
+
+You can also run a standard set of benchmarks manually via
 ```julia
 julia> using PkgBenchmark, Trixi
 
@@ -170,7 +191,7 @@ As a rule of thumb:
 - Consider using `@nospecialize` for methods like custom implementations of `Base.show`.
 
 
-## Performance metrics of the `AnalysisCallback`
+## [Performance metrics of the `AnalysisCallback`](@id performance-metrics)
 The [`AnalysisCallback`](@ref) computes two performance indicators that you can use to
 evaluate the serial and parallel performance of Trixi.jl. They represent
 measured run times that are normalized by the number of `rhs!` evaluations and
@@ -219,10 +240,10 @@ want to be measured (such as I/O callbacks, visualization etc.).
 ### Local, `rhs!`-only indicator
 The *local, `rhs!`-only indicator* is computed as
 ```math
-\text{time/DOF/rhs!} = \frac{t_\text{\texttt{rhs!}}}{n_\text{DOFs,local} \cdot n_\text{calls,\texttt{rhs!}}},
+\text{time/DOF/rhs!} = \frac{t_\text{\texttt{rhs!}} \cdot n_{\text{threads}}}{n_\text{DOFs,local} \cdot n_\text{calls,\texttt{rhs!}}},
 ```
-where ``t_\text{\texttt{rhs!}}`` is the accumulated time spent in `rhs!`,
-``n_\text{DOFs,local}`` is the *local* number of DOFs (i.e., on the
+where ``t_\text{\texttt{rhs!}}`` is the accumulated time spent in `rhs!`, ``n_{\text{threads}}`` is
+the number of threads, ``n_\text{DOFs,local}`` is the *local* number of DOFs (i.e., on the
 current MPI rank; if doing a serial run, you can just think of this as *the*
 number of DOFs), and ``n_\text{calls,\texttt{rhs!}}`` is the number of times the
 `rhs!` function has been evaluated. Note that for this indicator, we measure *only*
@@ -236,10 +257,10 @@ core numerical methods (e.g., when doing performance tuning).
 ### Performance index (PID)
 The *performance index* (PID) is computed as
 ```math
-\text{PID} = \frac{t_\text{wall} \cdot n_\text{ranks,MPI}}{n_\text{DOFs,global} \cdot n_\text{calls,\texttt{rhs!}}},
+\text{PID} = \frac{t_\text{wall} \cdot n_\text{ranks,MPI} \cdot n_{\text{threads}}}{n_\text{DOFs,global} \cdot n_\text{calls,\texttt{rhs!}}},
 ```
-where ``t_\text{wall}`` is the walltime since the last call to the `AnalysisCallback`,
-``n_\text{ranks,MPI}`` is the number of MPI ranks used,
+where ``t_\text{wall}`` is the walltime since the last call to the `AnalysisCallback`, ``n_{\text{threads}}``
+is the number of threads, ``n_\text{ranks,MPI}`` is the number of MPI ranks used,
 ``n_\text{DOFs,global}`` is the *global* number of DOFs (i.e., the sum of
 DOFs over all MPI ranks; if doing a serial run, you can just think of this as *the*
 number of DOFs), and ``n_\text{calls,\texttt{rhs!}}`` is the number of times the

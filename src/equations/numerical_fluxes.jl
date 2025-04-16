@@ -21,7 +21,7 @@ DG method (except floating point errors).
     f_rr = flux(u_rr, orientation_or_normal_direction, equations)
 
     # Average regular fluxes
-    return 0.5 * (f_ll + f_rr)
+    return 0.5f0 * (f_ll + f_rr)
 end
 
 """
@@ -59,6 +59,23 @@ Requires a rotationally invariant equation with equation-specific functions
 """
 struct FluxRotated{NumericalFlux}
     numerical_flux::NumericalFlux
+end
+
+# Rotated surface flux computation (2D version)
+@inline function (flux_rotated::FluxRotated)(u,
+                                             normal_direction::AbstractVector,
+                                             equations::AbstractEquations{2})
+    @unpack numerical_flux = flux_rotated
+
+    norm_ = norm(normal_direction)
+    # Normalize the vector without using `normalize` since we need to multiply by the `norm_` later
+    normal_vector = normal_direction / norm_
+
+    u_rotated = rotate_to_x(u, normal_vector, equations)
+
+    f = numerical_flux(u_rotated, 1, equations)
+
+    return rotate_from_x(f, normal_vector, equations) * norm_
 end
 
 # Rotated surface flux computation (2D version)
@@ -155,7 +172,7 @@ DissipationLocalLaxFriedrichs() = DissipationLocalLaxFriedrichs(max_abs_speed_na
                                                               equations)
     λ = dissipation.max_abs_speed(u_ll, u_rr, orientation_or_normal_direction,
                                   equations)
-    return -0.5 * λ * (u_rr - u_ll)
+    return -0.5f0 * λ * (u_rr - u_ll)
 end
 
 function Base.show(io::IO, d::DissipationLocalLaxFriedrichs)
@@ -163,7 +180,7 @@ function Base.show(io::IO, d::DissipationLocalLaxFriedrichs)
 end
 
 """
-    max_abs_speed_naive(u_ll, u_rr, orientation::Integer,   equations)
+    max_abs_speed_naive(u_ll, u_rr, orientation::Integer, equations)
     max_abs_speed_naive(u_ll, u_rr, normal_direction::AbstractVector, equations)
 
 Simple and fast estimate of the maximal wave speed of the Riemann problem with left and right states
@@ -180,11 +197,30 @@ function max_abs_speed_naive end
     return abs(normal_direction[1]) * max_abs_speed_naive(u_ll, u_rr, 1, equations)
 end
 
+"""
+    max_abs_speed(u_ll, u_rr, orientation::Integer, equations)
+    max_abs_speed(u_ll, u_rr, normal_direction::AbstractVector, equations)
+
+Simple and fast estimate of the maximal wave speed of the Riemann problem with left and right states
+`u_ll, u_rr`, based only on the local wave speeds associated to `u_ll` and `u_rr`.
+Less diffusive, i.e., overestimating than [`max_abs_speed_naive`](@ref).
+
+In particular, `max_abs_speed(u, u, i, equations)` gives the same result as `max_abs_speeds(u, equations)[i]`,
+i.e., the wave speeds used in `max_dt` which computes the maximum stable time step size through the 
+[`StepsizeCallback`](@ref).
+
+For non-integer arguments `normal_direction` in one dimension, `max_abs_speed_naive` returns
+`abs(normal_direction[1]) * max_abs_speed_naive(u_ll, u_rr, 1, equations)`.
+"""
+@inline function max_abs_speed(u_ll, u_rr,
+                               orientation_or_normal_direction,
+                               equations::AbstractEquations)
+    # Use naive version as "backup" if no specialized version for the equations at hand is available                                             
+    max_abs_speed_naive(u_ll, u_rr, orientation_or_normal_direction, equations)
+end
+
 const FluxLaxFriedrichs{MaxAbsSpeed} = FluxPlusDissipation{typeof(flux_central),
-                                                           DissipationLocalLaxFriedrichs{
-                                                                                         MaxAbsSpeed
-                                                                                         }
-                                                           }
+                                                           DissipationLocalLaxFriedrichs{MaxAbsSpeed}}
 """
     FluxLaxFriedrichs(max_abs_speed=max_abs_speed_naive)
 
@@ -207,32 +243,171 @@ See [`FluxLaxFriedrichs`](@ref).
 """
 const flux_lax_friedrichs = FluxLaxFriedrichs()
 
+@doc raw"""
+    DissipationLaxFriedrichsEntropyVariables(max_abs_speed=max_abs_speed_naive)
+
+Create a local Lax-Friedrichs-type dissipation operator that is provably entropy stable. This operator
+must be used together with an entropy-conservative two-point flux function (e.g., `flux_ec`) to yield 
+an entropy-stable surface flux. The surface flux function can be initialized as:
+```julia
+flux_es = FluxPlusDissipation(flux_ec, DissipationLaxFriedrichsEntropyVariables())
+```
+
+In particular, the numerical flux has the form
+```math
+f^{\mathrm{ES}} = f^{\mathrm{EC}} - \frac{1}{2} \lambda_{\mathrm{max}} H (w_r - w_l),
+```
+where ``f^{\mathrm{EC}}`` is the entropy-conservative two-point flux function (computed with, e.g., `flux_ec`), ``\lambda_{\mathrm{max}}`` 
+is the maximum wave speed estimated as `max_abs_speed(u_l, u_r, orientation_or_normal_direction, equations)`,
+defaulting to [`max_abs_speed_naive`](@ref), ``H`` is a symmetric positive-definite dissipation matrix that
+depends on the left and right states `u_l` and `u_r`, and ``(w_r - w_l)`` is the jump in entropy variables.
+Ideally, ``H (w_r - w_l) = (u_r - u_l)``, such that the dissipation operator is consistent with the local
+Lax-Friedrichs dissipation.
+
+The entropy-stable dissipation operator is computed with the function
+`function (dissipation::DissipationLaxFriedrichsEntropyVariables)(u_l, u_r, orientation_or_normal_direction, equations)`,
+which must be specialized for each equation.
+
+For the derivation of the dissipation matrix for the multi-ion GLM-MHD equations, see:
+- A. Rueda-Ramírez, A. Sikstel, G. Gassner, An Entropy-Stable Discontinuous Galerkin Discretization
+  of the Ideal Multi-Ion Magnetohydrodynamics System (2024). Journal of Computational Physics.
+  [DOI: 10.1016/j.jcp.2024.113655](https://doi.org/10.1016/j.jcp.2024.113655).
 """
-    FluxHLL(min_max_speed=min_max_speed_naive)
+struct DissipationLaxFriedrichsEntropyVariables{MaxAbsSpeed}
+    max_abs_speed::MaxAbsSpeed
+end
+
+DissipationLaxFriedrichsEntropyVariables() = DissipationLaxFriedrichsEntropyVariables(max_abs_speed_naive)
+
+function Base.show(io::IO, d::DissipationLaxFriedrichsEntropyVariables)
+    print(io, "DissipationLaxFriedrichsEntropyVariables(", d.max_abs_speed, ")")
+end
+
+@doc raw"""
+    DissipationMatrixWintersEtal()
+
+Creates the Roe-like entropy-stable matrix dissipation operator from Winters et al. (2017). This operator
+must be used together with an entropy-conservative two-point flux function 
+(e.g., [`flux_ranocha`](@ref) or [`flux_chandrashekar`](@ref)) to yield 
+an entropy-stable surface flux. The surface flux function can be initialized as:
+```julia
+flux_es = FluxPlusDissipation(flux_ec, DissipationMatrixWintersEtal())
+```
+The 1D and 2D implementations are adapted from the [Atum.jl library](https://github.com/mwarusz/Atum.jl/blob/c7ed44f2b7972ac726ef345da7b98b0bda60e2a3/src/balancelaws/euler.jl#L198).
+The 3D implementation is adapted from the [FLUXO library](https://github.com/project-fluxo/fluxo)
+
+For the derivation of the matrix dissipation operator, see:
+- A. R. Winters, D. Derigs, G. Gassner, S. Walch, A uniquely defined entropy stable matrix dissipation operator 
+  for high Mach number ideal MHD and compressible Euler simulations (2017). Journal of Computational Physics.
+  [DOI: 10.1016/j.jcp.2016.12.006](https://doi.org/10.1016/j.jcp.2016.12.006).
+"""
+struct DissipationMatrixWintersEtal end
+
+@inline function (dissipation::DissipationMatrixWintersEtal)(u_ll, u_rr,
+                                                             orientation::Integer,
+                                                             equations::AbstractEquations{1})
+    return dissipation(u_ll, u_rr, SVector(1), equations)
+end
+
+@inline function (dissipation::DissipationMatrixWintersEtal)(u_ll, u_rr,
+                                                             orientation::Integer,
+                                                             equations::AbstractEquations{2})
+    if orientation == 1
+        return dissipation(u_ll, u_rr, SVector(1, 0), equations)
+    else # orientation == 2
+        return dissipation(u_ll, u_rr, SVector(0, 1), equations)
+    end
+end
+
+@inline function (dissipation::DissipationMatrixWintersEtal)(u_ll, u_rr,
+                                                             orientation::Integer,
+                                                             equations::AbstractEquations{3})
+    if orientation == 1
+        return dissipation(u_ll, u_rr, SVector(1, 0, 0), equations)
+    elseif orientation == 2
+        return dissipation(u_ll, u_rr, SVector(0, 1, 0), equations)
+    else # orientation == 3
+        return dissipation(u_ll, u_rr, SVector(0, 0, 1), equations)
+    end
+end
+
+"""
+    FluxHLL(min_max_speed=min_max_speed_davis)
 
 Create an HLL (Harten, Lax, van Leer) numerical flux where the minimum and maximum
 wave speeds are estimated as
 `λ_min, λ_max = min_max_speed(u_ll, u_rr, orientation_or_normal_direction, equations)`,
-defaulting to [`min_max_speed_naive`](@ref).
+defaulting to [`min_max_speed_davis`](@ref).
+Original paper:
+- Amiram Harten, Peter D. Lax, Bram van Leer (1983)
+  On Upstream Differencing and Godunov-Type Schemes for Hyperbolic Conservation Laws
+  [DOI: 10.1137/1025002](https://doi.org/10.1137/1025002)
 """
 struct FluxHLL{MinMaxSpeed}
     min_max_speed::MinMaxSpeed
 end
 
-FluxHLL() = FluxHLL(min_max_speed_naive)
+FluxHLL() = FluxHLL(min_max_speed_davis)
 
 """
-    min_max_speed_naive(u_ll, u_rr, orientation::Integer,   equations)
+    min_max_speed_naive(u_ll, u_rr, orientation::Integer, equations)
     min_max_speed_naive(u_ll, u_rr, normal_direction::AbstractVector, equations)
 
-Simple and fast estimate of the minimal and maximal wave speed of the Riemann problem with
+Simple and fast estimate(!) of the minimal and maximal wave speed of the Riemann problem with
 left and right states `u_ll, u_rr`, usually based only on the local wave speeds associated to
 `u_ll` and `u_rr`.
+Slightly more diffusive than [`min_max_speed_davis`](@ref).
 - Amiram Harten, Peter D. Lax, Bram van Leer (1983)
   On Upstream Differencing and Godunov-Type Schemes for Hyperbolic Conservation Laws
   [DOI: 10.1137/1025002](https://doi.org/10.1137/1025002)
+
+See eq. (10.37) from
+- Eleuterio F. Toro (2009)
+  Riemann Solvers and Numerical Methods for Fluid Dynamics: A Practical Introduction
+  [DOI: 10.1007/b79761](https://doi.org/10.1007/b79761)
+
+See also [`FluxHLL`](@ref), [`min_max_speed_davis`](@ref), [`min_max_speed_einfeldt`](@ref).
 """
 function min_max_speed_naive end
+
+"""
+    min_max_speed_davis(u_ll, u_rr, orientation::Integer, equations)
+    min_max_speed_davis(u_ll, u_rr, normal_direction::AbstractVector, equations)
+
+Simple and fast estimates of the minimal and maximal wave speed of the Riemann problem with
+left and right states `u_ll, u_rr`, usually based only on the local wave speeds associated to
+`u_ll` and `u_rr`.
+
+- S.F. Davis (1988)
+  Simplified Second-Order Godunov-Type Methods
+  [DOI: 10.1137/0909030](https://doi.org/10.1137/0909030)
+
+See eq. (10.38) from
+- Eleuterio F. Toro (2009)
+  Riemann Solvers and Numerical Methods for Fluid Dynamics: A Practical Introduction
+  [DOI: 10.1007/b79761](https://doi.org/10.1007/b79761)
+See also [`FluxHLL`](@ref), [`min_max_speed_naive`](@ref), [`min_max_speed_einfeldt`](@ref).
+"""
+function min_max_speed_davis end
+
+"""
+    min_max_speed_einfeldt(u_ll, u_rr, orientation::Integer, equations)
+    min_max_speed_einfeldt(u_ll, u_rr, normal_direction::AbstractVector, equations)
+
+More advanced mininmal and maximal wave speed computation based on
+- Bernd Einfeldt (1988)
+  On Godunov-type methods for gas dynamics.
+  [DOI: 10.1137/0725021](https://doi.org/10.1137/0725021)
+- Bernd Einfeldt, Claus-Dieter Munz, Philip L. Roe and Björn Sjögreen (1991)
+  On Godunov-type methods near low densities.
+  [DOI: 10.1016/0021-9991(91)90211-3](https://doi.org/10.1016/0021-9991(91)90211-3)
+
+originally developed for the compressible Euler equations.
+A compact representation can be found in [this lecture notes, eq. (9.28)](https://metaphor.ethz.ch/x/2019/hs/401-4671-00L/literature/mishra_hyperbolic_pdes.pdf).
+
+See also [`FluxHLL`](@ref), [`min_max_speed_naive`](@ref), [`min_max_speed_davis`](@ref).
+"""
+function min_max_speed_einfeldt end
 
 @inline function (numflux::FluxHLL)(u_ll, u_rr, orientation_or_normal_direction,
                                     equations)
@@ -262,6 +437,14 @@ Base.show(io::IO, numflux::FluxHLL) = print(io, "FluxHLL(", numflux.min_max_spee
 See [`FluxHLL`](@ref).
 """
 const flux_hll = FluxHLL()
+
+"""
+    flux_hlle
+
+See [`min_max_speed_einfeldt`](@ref).
+This is a [`FluxHLL`](@ref)-type two-wave solver with special estimates of the wave speeds.
+"""
+const flux_hlle = FluxHLL(min_max_speed_einfeldt)
 
 """
     flux_shima_etal_turbo(u_ll, u_rr, orientation_or_normal_direction, equations)
@@ -342,7 +525,8 @@ flux vector splitting.
 
 The [`SurfaceIntegralUpwind`](@ref) with a given `splitting` is equivalent to
 the [`SurfaceIntegralStrongForm`](@ref) with `FluxUpwind(splitting)`
-as numerical flux (up to floating point differences).
+as numerical flux (up to floating point differences). Note, that
+[`SurfaceIntegralUpwind`](@ref) is only available on [`TreeMesh`](@ref).
 
 !!! warning "Experimental implementation (upwind SBP)"
     This is an experimental feature and may change in future releases.
@@ -356,6 +540,15 @@ end
     fm = splitting(u_rr, Val{:minus}(), orientation, equations)
     fp = splitting(u_ll, Val{:plus}(), orientation, equations)
     return fm + fp
+end
+
+@inline function (numflux::FluxUpwind)(u_ll, u_rr,
+                                       normal_direction::AbstractVector,
+                                       equations::AbstractEquations{2})
+    @unpack splitting = numflux
+    f_tilde_m = splitting(u_rr, Val{:minus}(), normal_direction, equations)
+    f_tilde_p = splitting(u_ll, Val{:plus}(), normal_direction, equations)
+    return f_tilde_m + f_tilde_p
 end
 
 Base.show(io::IO, f::FluxUpwind) = print(io, "FluxUpwind(", f.splitting, ")")

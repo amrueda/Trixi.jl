@@ -10,6 +10,7 @@
 *.mesh
 *.bson
 *.inp
+*.msh
 **/Manifest.toml
 out*/
 docs/build
@@ -27,7 +28,7 @@ coverage_report/
 
 .DS_Store
 
-run
-run/*
+run*/
+run*/*
 
 LocalPreferences.toml

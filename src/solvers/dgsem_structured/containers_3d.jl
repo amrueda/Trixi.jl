@@ -210,7 +210,7 @@ function calc_contravariant_vectors!(contravariant_vectors::AbstractArray{<:Any,
 
             for ii in eachnode(basis)
                 # Multiply derivative_matrix to j-dimension to differentiate wrt η
-                result += 0.5 * derivative_matrix[j, ii] *
+                result += 0.5f0 * derivative_matrix[j, ii] *
                           (node_coordinates[m, i, ii, k, element] *
                            jacobian_matrix[l, 3, i, ii, k, element] -
                            node_coordinates[l, i, ii, k, element] *
@@ -226,7 +226,7 @@ function calc_contravariant_vectors!(contravariant_vectors::AbstractArray{<:Any,
 
             for ii in eachnode(basis)
                 # Multiply derivative_matrix to k-dimension to differentiate wrt ζ
-                result += 0.5 * derivative_matrix[k, ii] *
+                result += 0.5f0 * derivative_matrix[k, ii] *
                           (node_coordinates[m, i, j, ii, element] *
                            jacobian_matrix[l, 2, i, j, ii, element] -
                            node_coordinates[l, i, j, ii, element] *
@@ -244,7 +244,7 @@ function calc_contravariant_vectors!(contravariant_vectors::AbstractArray{<:Any,
 
             for ii in eachnode(basis)
                 # Multiply derivative_matrix to k-dimension to differentiate wrt ζ
-                result += 0.5 * derivative_matrix[k, ii] *
+                result += 0.5f0 * derivative_matrix[k, ii] *
                           (node_coordinates[m, i, j, ii, element] *
                            jacobian_matrix[l, 1, i, j, ii, element] -
                            node_coordinates[l, i, j, ii, element] *
@@ -260,7 +260,7 @@ function calc_contravariant_vectors!(contravariant_vectors::AbstractArray{<:Any,
 
             for ii in eachnode(basis)
                 # Multiply derivative_matrix to i-dimension to differentiate wrt ξ
-                result += 0.5 * derivative_matrix[i, ii] *
+                result += 0.5f0 * derivative_matrix[i, ii] *
                           (node_coordinates[m, ii, j, k, element] *
                            jacobian_matrix[l, 3, ii, j, k, element] -
                            node_coordinates[l, ii, j, k, element] *
@@ -278,7 +278,7 @@ function calc_contravariant_vectors!(contravariant_vectors::AbstractArray{<:Any,
 
             for ii in eachnode(basis)
                 # Multiply derivative_matrix to i-dimension to differentiate wrt ξ
-                result += 0.5 * derivative_matrix[i, ii] *
+                result += 0.5f0 * derivative_matrix[i, ii] *
                           (node_coordinates[m, ii, j, k, element] *
                            jacobian_matrix[l, 2, ii, j, k, element] -
                            node_coordinates[l, ii, j, k, element] *
@@ -294,7 +294,7 @@ function calc_contravariant_vectors!(contravariant_vectors::AbstractArray{<:Any,
 
             for ii in eachnode(basis)
                 # Multiply derivative_matrix to j-dimension to differentiate wrt η
-                result += 0.5 * derivative_matrix[j, ii] *
+                result += 0.5f0 * derivative_matrix[j, ii] *
                           (node_coordinates[m, i, ii, k, element] *
                            jacobian_matrix[l, 1, i, ii, k, element] -
                            node_coordinates[l, i, ii, k, element] *

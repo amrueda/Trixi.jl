@@ -33,18 +33,13 @@ end
 
 # The methods below are specialized on the volume integral type
 # and called from the basic `create_cache` method at the top.
-function create_cache(mesh::Union{TreeMesh{1}, StructuredMesh{1}, P4estMesh{1}},
-                      equations,
+function create_cache(mesh::Union{TreeMesh{1}, StructuredMesh{1}}, equations,
                       volume_integral::VolumeIntegralFluxDifferencing, dg::DG, uEltype)
     NamedTuple()
 end
 
-function create_cache(mesh::Union{TreeMesh{1}, StructuredMesh{1}, P4estMesh{1}},
-                      equations,
+function create_cache(mesh::Union{TreeMesh{1}, StructuredMesh{1}}, equations,
                       volume_integral::VolumeIntegralShockCapturingHG, dg::DG, uEltype)
-    element_ids_dg = Int[]
-    element_ids_dgfv = Int[]
-
     cache = create_cache(mesh, equations,
                          VolumeIntegralFluxDifferencing(volume_integral.volume_flux_dg),
                          dg, uEltype)
@@ -55,12 +50,10 @@ function create_cache(mesh::Union{TreeMesh{1}, StructuredMesh{1}, P4estMesh{1}},
     fstar1_R_threaded = A2dp1_x[A2dp1_x(undef, nvariables(equations), nnodes(dg) + 1)
                                 for _ in 1:Threads.nthreads()]
 
-    return (; cache..., element_ids_dg, element_ids_dgfv, fstar1_L_threaded,
-            fstar1_R_threaded)
+    return (; cache..., fstar1_L_threaded, fstar1_R_threaded)
 end
 
-function create_cache(mesh::Union{TreeMesh{1}, StructuredMesh{1}, P4estMesh{1}},
-                      equations,
+function create_cache(mesh::Union{TreeMesh{1}, StructuredMesh{1}}, equations,
                       volume_integral::VolumeIntegralPureLGLFiniteVolume, dg::DG,
                       uEltype)
     A2dp1_x = Array{uEltype, 2}
@@ -76,7 +69,7 @@ end
 
 function rhs!(du, u, t,
               mesh::TreeMesh{1}, equations,
-              initial_condition, boundary_conditions, source_terms::Source,
+              boundary_conditions, source_terms::Source,
               dg::DG, cache) where {Source}
     # Reset du
     @trixi_timeit timer() "reset ∂u/∂t" reset_du!(du, dg, cache)
@@ -144,6 +137,13 @@ function calc_volume_integral!(du, u,
     return nothing
 end
 
+#=
+`weak_form_kernel!` is only implemented for conserved terms as
+non-conservative terms should always be discretized in conjunction with a flux-splitting scheme,
+see `flux_differencing_kernel!`.
+This treatment is required to achieve, e.g., entropy-stability or well-balancedness.
+See also https://github.com/trixi-framework/Trixi.jl/issues/1671#issuecomment-1765644064
+=#
 @inline function weak_form_kernel!(du, u,
                                    element, mesh::Union{TreeMesh{1}, StructuredMesh{1}},
                                    nonconservative_terms::False, equations,
@@ -238,7 +238,7 @@ end
         end
 
         # The factor 0.5 cancels the factor 2 in the flux differencing form
-        multiply_add_to_node_vars!(du, alpha * 0.5, integral_contribution, equations,
+        multiply_add_to_node_vars!(du, alpha * 0.5f0, integral_contribution, equations,
                                    dg, i, element)
     end
 end
@@ -249,37 +249,35 @@ function calc_volume_integral!(du, u,
                                nonconservative_terms, equations,
                                volume_integral::VolumeIntegralShockCapturingHG,
                                dg::DGSEM, cache)
-    @unpack element_ids_dg, element_ids_dgfv = cache
     @unpack volume_flux_dg, volume_flux_fv, indicator = volume_integral
 
     # Calculate blending factors α: u = u_DG * (1 - α) + u_FV * α
     alpha = @trixi_timeit timer() "blending factors" indicator(u, mesh, equations, dg,
                                                                cache)
 
-    # Determine element ids for DG-only and blended DG-FV volume integral
-    pure_and_blended_element_ids!(element_ids_dg, element_ids_dgfv, alpha, dg, cache)
-
-    # Loop over pure DG elements
-    @trixi_timeit timer() "pure DG" @threaded for idx_element in eachindex(element_ids_dg)
-        element = element_ids_dg[idx_element]
-        flux_differencing_kernel!(du, u, element, mesh, nonconservative_terms,
-                                  equations,
-                                  volume_flux_dg, dg, cache)
-    end
-
-    # Loop over blended DG-FV elements
-    @trixi_timeit timer() "blended DG-FV" @threaded for idx_element in eachindex(element_ids_dgfv)
-        element = element_ids_dgfv[idx_element]
+    # For `Float64`, this gives 1.8189894035458565e-12
+    # For `Float32`, this gives 1.1920929f-5
+    RealT = eltype(alpha)
+    atol = max(100 * eps(RealT), eps(RealT)^convert(RealT, 0.75f0))
+    @threaded for element in eachelement(dg, cache)
         alpha_element = alpha[element]
+        # Clip blending factor for values close to zero (-> pure DG)
+        dg_only = isapprox(alpha_element, 0, atol = atol)
 
-        # Calculate DG volume integral contribution
-        flux_differencing_kernel!(du, u, element, mesh, nonconservative_terms,
-                                  equations,
-                                  volume_flux_dg, dg, cache, 1 - alpha_element)
+        if dg_only
+            flux_differencing_kernel!(du, u, element, mesh,
+                                      nonconservative_terms, equations,
+                                      volume_flux_dg, dg, cache)
+        else
+            # Calculate DG volume integral contribution
+            flux_differencing_kernel!(du, u, element, mesh,
+                                      nonconservative_terms, equations,
+                                      volume_flux_dg, dg, cache, 1 - alpha_element)
 
-        # Calculate FV volume integral contribution
-        fv_kernel!(du, u, mesh, nonconservative_terms, equations, volume_flux_fv,
-                   dg, cache, element, alpha_element)
+            # Calculate FV volume integral contribution
+            fv_kernel!(du, u, mesh, nonconservative_terms, equations, volume_flux_fv,
+                       dg, cache, element, alpha_element)
+        end
     end
 
     return nothing
@@ -287,7 +285,7 @@ end
 
 # TODO: Taal dimension agnostic
 function calc_volume_integral!(du, u,
-                               mesh::TreeMesh{1},
+                               mesh::Union{TreeMesh{1}, StructuredMesh{1}},
                                nonconservative_terms, equations,
                                volume_integral::VolumeIntegralPureLGLFiniteVolume,
                                dg::DGSEM, cache)
@@ -370,8 +368,8 @@ end
         # Note the factor 0.5 necessary for the nonconservative fluxes based on
         # the interpretation of global SBP operators coupled discontinuously via
         # central fluxes/SATs
-        f1_L = f1 + 0.5 * nonconservative_flux(u_ll, u_rr, 1, equations)
-        f1_R = f1 + 0.5 * nonconservative_flux(u_rr, u_ll, 1, equations)
+        f1_L = f1 + 0.5f0 * nonconservative_flux(u_ll, u_rr, 1, equations)
+        f1_R = f1 + 0.5f0 * nonconservative_flux(u_rr, u_ll, 1, equations)
 
         # Copy to temporary storage
         set_node_vars!(fstar1_L, f1_L, equations, dg, i)
@@ -385,15 +383,17 @@ end
 function prolong2interfaces!(cache, u,
                              mesh::TreeMesh{1}, equations, surface_integral, dg::DG)
     @unpack interfaces = cache
+    @unpack neighbor_ids = interfaces
+    interfaces_u = interfaces.u
 
     @threaded for interface in eachinterface(dg, cache)
-        left_element = interfaces.neighbor_ids[1, interface]
-        right_element = interfaces.neighbor_ids[2, interface]
+        left_element = neighbor_ids[1, interface]
+        right_element = neighbor_ids[2, interface]
 
         # interface in x-direction
         for v in eachvariable(equations)
-            interfaces.u[1, v, interface] = u[v, nnodes(dg), left_element]
-            interfaces.u[2, v, interface] = u[v, 1, right_element]
+            interfaces_u[1, v, interface] = u[v, nnodes(dg), left_element]
+            interfaces_u[2, v, interface] = u[v, 1, right_element]
         end
     end
 
@@ -462,9 +462,9 @@ function calc_interface_flux!(surface_flux_values,
             # the interpretation of global SBP operators coupled discontinuously via
             # central fluxes/SATs
             surface_flux_values[v, left_direction, left_id] = flux[v] +
-                                                              0.5 * noncons_left[v]
+                                                              0.5f0 * noncons_left[v]
             surface_flux_values[v, right_direction, right_id] = flux[v] +
-                                                                0.5 * noncons_right[v]
+                                                                0.5f0 * noncons_right[v]
         end
     end
 
@@ -561,7 +561,6 @@ function calc_boundary_flux_by_direction!(surface_flux_values::AbstractArray{<:A
                                           nonconservative_terms::True, equations,
                                           surface_integral, dg::DG, cache,
                                           direction, first_boundary, last_boundary)
-    surface_flux, nonconservative_flux = surface_integral.surface_flux
     @unpack u, neighbor_ids, neighbor_sides, node_coordinates, orientations = cache.boundaries
 
     @threaded for boundary in first_boundary:last_boundary
@@ -576,17 +575,16 @@ function calc_boundary_flux_by_direction!(surface_flux_values::AbstractArray{<:A
             u_inner = u_rr
         end
         x = get_node_coords(node_coordinates, equations, dg, boundary)
-        flux = boundary_condition(u_inner, orientations[boundary], direction, x, t,
-                                  surface_flux,
-                                  equations)
-        noncons_flux = boundary_condition(u_inner, orientations[boundary], direction, x,
-                                          t, nonconservative_flux,
-                                          equations)
+
+        flux, noncons_flux = boundary_condition(u_inner, orientations[boundary],
+                                                direction, x, t,
+                                                surface_integral.surface_flux,
+                                                equations)
 
         # Copy flux to left and right element storage
         for v in eachvariable(equations)
             surface_flux_values[v, direction, neighbor] = flux[v] +
-                                                          0.5 * noncons_flux[v]
+                                                          0.5f0 * noncons_flux[v]
         end
     end
 
@@ -621,8 +619,10 @@ end
 
 function apply_jacobian!(du, mesh::Union{TreeMesh{1}, StructuredMesh{1}},
                          equations, dg::DG, cache)
+    @unpack inverse_jacobian = cache.elements
+
     @threaded for element in eachelement(dg, cache)
-        factor = -cache.elements.inverse_jacobian[element]
+        factor = -inverse_jacobian[element]
 
         for i in eachnode(dg)
             for v in eachvariable(equations)
@@ -642,11 +642,13 @@ end
 
 function calc_sources!(du, u, t, source_terms,
                        equations::AbstractEquations{1}, dg::DG, cache)
+    @unpack node_coordinates = cache.elements
+
     @threaded for element in eachelement(dg, cache)
         for i in eachnode(dg)
             u_local = get_node_vars(u, equations, dg, i, element)
-            x_local = get_node_coords(cache.elements.node_coordinates, equations, dg, i,
-                                      element)
+            x_local = get_node_coords(node_coordinates, equations, dg,
+                                      i, element)
             du_local = source_terms(u_local, x_local, t, equations)
             add_to_node_vars!(du, du_local, equations, dg, i, element)
         end

@@ -76,6 +76,27 @@ function refine!(u_ode::AbstractVector, adaptor, mesh::TreeMesh{1},
     return nothing
 end
 
+function refine!(u_ode::AbstractVector, adaptor, mesh::TreeMesh{1},
+                 equations, dg::DGSEM, cache, cache_parabolic,
+                 elements_to_refine)
+    # Call `refine!` for the hyperbolic part, which does the heavy lifting of
+    # actually transferring the solution to the refined cells
+    refine!(u_ode, adaptor, mesh, equations, dg, cache, elements_to_refine)
+
+    # Resize parabolic helper variables
+    @unpack viscous_container = cache_parabolic
+    resize!(viscous_container, equations, dg, cache)
+    reinitialize_containers!(mesh, equations, dg, cache_parabolic)
+
+    # Sanity check
+    @unpack interfaces = cache_parabolic
+    if isperiodic(mesh.tree)
+        @assert ninterfaces(interfaces)==1 * nelements(dg, cache_parabolic) ("For 1D and periodic domains, the number of interfaces must be the same as the number of elements")
+    end
+
+    return nothing
+end
+
 # TODO: Taal compare performance of different implementations
 # Refine solution data u for an element, using L2 projection (interpolation)
 function refine_element!(u::AbstractArray{<:Any, 3}, element_id,
@@ -201,6 +222,27 @@ function coarsen!(u_ode::AbstractVector, adaptor, mesh::TreeMesh{1},
     return nothing
 end
 
+function coarsen!(u_ode::AbstractVector, adaptor, mesh::TreeMesh{1},
+                  equations, dg::DGSEM, cache, cache_parabolic,
+                  elements_to_remove)
+    # Call `coarsen!` for the hyperbolic part, which does the heavy lifting of
+    # actually transferring the solution to the coarsened cells
+    coarsen!(u_ode, adaptor, mesh, equations, dg, cache, elements_to_remove)
+
+    # Resize parabolic helper variables
+    @unpack viscous_container = cache_parabolic
+    resize!(viscous_container, equations, dg, cache)
+    reinitialize_containers!(mesh, equations, dg, cache_parabolic)
+
+    # Sanity check
+    @unpack interfaces = cache_parabolic
+    if isperiodic(mesh.tree)
+        @assert ninterfaces(interfaces)==1 * nelements(dg, cache_parabolic) ("For 1D and periodic domains, the number of interfaces must be the same as the number of elements")
+    end
+
+    return nothing
+end
+
 # TODO: Taal compare performance of different implementations
 # Coarsen solution data u for two elements, using L2 projection
 function coarsen_elements!(u::AbstractArray{<:Any, 3}, element_id,
@@ -249,7 +291,7 @@ function create_cache(::Type{ControllerThreeLevel}, mesh::TreeMesh{1}, equations
     return (; controller_value)
 end
 
-function create_cache(::Type{ControllerThreeLevelCombined}, mesh::TreeMesh{1},
+function create_cache(::Type{ControllerThreeLevelCombined}, mesh::TreeMesh,
                       equations, dg::DG, cache)
     controller_value = Vector{Int}(undef, nelements(dg, cache))
     return (; controller_value)

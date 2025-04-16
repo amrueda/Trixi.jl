@@ -16,6 +16,19 @@ Return the number of degrees of freedom associated with each scalar variable.
 end
 
 """
+    ndofsglobal(semi::AbstractSemidiscretization)
+
+Return the global number of degrees of freedom associated with each scalar variable across all MPI ranks.
+This is the same as [`ndofs`](@ref) for simulations running in serial or
+parallelized via threads. It will in general be different for simulations
+running in parallel with MPI.
+"""
+@inline function ndofsglobal(semi::AbstractSemidiscretization)
+    mesh, _, solver, cache = mesh_equations_solver_cache(semi)
+    ndofsglobal(mesh, solver, cache)
+end
+
+"""
     integrate_via_indices(func, u_ode, semi::AbstractSemidiscretization, args...; normalize=true)
 
 Call `func(u, i..., element, equations, solver, args...)` for all nodal indices `i..., element`
@@ -48,8 +61,8 @@ function integrate(func::Func, u_ode, semi::AbstractSemidiscretization;
     integrate(func, u, mesh, equations, solver, cache, normalize = normalize)
 end
 
-function integrate(u, semi::AbstractSemidiscretization; normalize = true)
-    integrate(cons2cons, u, semi; normalize = normalize)
+function integrate(u_ode, semi::AbstractSemidiscretization; normalize = true)
+    integrate(cons2cons, u_ode, semi; normalize = normalize)
 end
 
 """
@@ -70,7 +83,15 @@ end
 Wrap the semidiscretization `semi` as an ODE problem in the time interval `tspan`
 that can be passed to `solve` from the [SciML ecosystem](https://diffeq.sciml.ai/latest/).
 """
-function semidiscretize(semi::AbstractSemidiscretization, tspan)
+function semidiscretize(semi::AbstractSemidiscretization, tspan;
+                        reset_threads = true)
+    # Optionally reset Polyester.jl threads. See
+    # https://github.com/trixi-framework/Trixi.jl/issues/1583
+    # https://github.com/JuliaSIMD/Polyester.jl/issues/30
+    if reset_threads
+        Polyester.reset_threads!()
+    end
+
     u0_ode = compute_coefficients(first(tspan), semi)
     # TODO: MPI, do we want to synchronize loading and print debug statements, e.g. using
     #       mpi_isparallel() && MPI.Barrier(mpi_comm())
@@ -81,14 +102,23 @@ function semidiscretize(semi::AbstractSemidiscretization, tspan)
 end
 
 """
-    semidiscretize(semi::AbstractSemidiscretization, tspan, restart_file::AbstractString)
+    semidiscretize(semi::AbstractSemidiscretization, tspan, 
+                   restart_file::AbstractString)
 
 Wrap the semidiscretization `semi` as an ODE problem in the time interval `tspan`
 that can be passed to `solve` from the [SciML ecosystem](https://diffeq.sciml.ai/latest/).
 The initial condition etc. is taken from the `restart_file`.
 """
 function semidiscretize(semi::AbstractSemidiscretization, tspan,
-                        restart_file::AbstractString)
+                        restart_file::AbstractString;
+                        reset_threads = true)
+    # Optionally reset Polyester.jl threads. See
+    # https://github.com/trixi-framework/Trixi.jl/issues/1583
+    # https://github.com/JuliaSIMD/Polyester.jl/issues/30
+    if reset_threads
+        Polyester.reset_threads!()
+    end
+
     u0_ode = load_restart_file(semi, restart_file)
     # TODO: MPI, do we want to synchronize loading and print debug statements, e.g. using
     #       mpi_isparallel() && MPI.Barrier(mpi_comm())
@@ -237,12 +267,20 @@ end
 
 function _jacobian_ad_forward(semi, t0, u0_ode, du_ode, config)
     new_semi = remake(semi, uEltype = eltype(config))
+    # Create anonymous function passed as first argument to `ForwardDiff.jacobian` to match
+    # `ForwardDiff.jacobian(f!, y::AbstractArray, x::AbstractArray, 
+    #                       cfg::JacobianConfig = JacobianConfig(f!, y, x), check=Val{true}())`
     J = ForwardDiff.jacobian(du_ode, u0_ode, config) do du_ode, u_ode
         Trixi.rhs!(du_ode, u_ode, new_semi, t0)
     end
 
     return J
 end
+
+# unpack u if it is wrapped in VectorOfArray (mainly for DGMulti solvers)
+jacobian_ad_forward(semi::AbstractSemidiscretization, t0, u0_ode::VectorOfArray) = jacobian_ad_forward(semi,
+                                                                                                       t0,
+                                                                                                       parent(u0_ode))
 
 # This version is specialized to `StructArray`s used by some `DGMulti` solvers.
 # We need to convert the numerical solution vectors since ForwardDiff cannot
@@ -263,6 +301,9 @@ end
 
 function _jacobian_ad_forward_structarrays(semi, t0, u0_ode_plain, du_ode_plain, config)
     new_semi = remake(semi, uEltype = eltype(config))
+    # Create anonymous function passed as first argument to `ForwardDiff.jacobian` to match
+    # `ForwardDiff.jacobian(f!, y::AbstractArray, x::AbstractArray, 
+    #                       cfg::JacobianConfig = JacobianConfig(f!, y, x), check=Val{true}())`
     J = ForwardDiff.jacobian(du_ode_plain, u0_ode_plain,
                              config) do du_ode_plain, u_ode_plain
         u_ode = StructArray{SVector{nvariables(semi), eltype(config)}}(ntuple(v -> view(u_ode_plain,
@@ -319,6 +360,10 @@ function get_element_variables!(element_variables, u_ode,
     get_element_variables!(element_variables, u, mesh_equations_solver_cache(semi)...)
 end
 
+function get_node_variables!(node_variables, semi::AbstractSemidiscretization)
+    get_node_variables!(node_variables, mesh_equations_solver_cache(semi)...)
+end
+
 # To implement AMR and use OrdinaryDiffEq.jl etc., we have to be a bit creative.
 # Since the caches of the SciML ecosystem are immutable structs, we cannot simply
 # change the underlying arrays therein. Hence, to support changing the number of
@@ -347,7 +392,7 @@ end
 #
 # In some sense, having plain multidimensional `Array`s not support `resize!`
 # isn't necessarily a bug (although it would be nice to add this possibility to
-# base Julia) but can turn out to be a feature for us, because it will aloow us
+# base Julia) but can turn out to be a feature for us, because it will allow us
 # more specializations.
 # Since we can use multiple dispatch, these kinds of specializations can be
 # tailored specifically to each combinations of mesh/solver etc.
@@ -371,6 +416,7 @@ end
 # TODO: Taal, document interface?
 # New mesh/solver combinations have to implement
 # - ndofs(mesh, solver, cache)
+# - ndofsgloabal(mesh, solver, cache)
 # - ndims(mesh)
 # - nnodes(solver)
 # - real(solver)
@@ -381,7 +427,7 @@ end
 # - calc_error_norms(func, u, t, analyzer, mesh, equations, initial_condition, solver, cache, cache_analysis)
 # - allocate_coefficients(mesh, equations, solver, cache)
 # - compute_coefficients!(u, func, mesh, equations, solver, cache)
-# - rhs!(du, u, t, mesh, equations, initial_condition, boundary_conditions, source_terms, solver, cache)
+# - rhs!(du, u, t, mesh, equations, boundary_conditions, source_terms, solver, cache)
 #
 
 end # @muladd

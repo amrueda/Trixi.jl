@@ -2,12 +2,7 @@
 module TrixiMakieExt
 
 # Required for visualization code
-if isdefined(Base, :get_extension)
-    using Makie: Makie, GeometryBasics
-else
-    # Until Julia v1.9 is the minimum required version for Trixi.jl, we still support Requires.jl
-    using ..Makie: Makie, GeometryBasics
-end
+using Makie: Makie, GeometryBasics
 
 # Use all exported symbols to avoid having to rewrite `recipes_makie.jl`
 using Trixi
@@ -29,9 +24,7 @@ import Trixi: iplot, iplot!
 # First some utilities
 # Given a reference plotting triangulation, this function generates a plotting triangulation for
 # the entire global mesh. The output can be plotted using `Makie.mesh`.
-function global_plotting_triangulation_makie(pds::PlotDataSeries{
-                                                                 <:PlotData2DTriangulated
-                                                                 };
+function global_plotting_triangulation_makie(pds::PlotDataSeries{<:PlotData2DTriangulated};
                                              set_z_coordinate_zero = false)
     @unpack variable_id = pds
     pd = pds.plot_data
@@ -61,8 +54,7 @@ end
 
 # Returns a list of `Makie.Point`s which can be used to plot the mesh, or a solution "wireframe"
 # (e.g., a plot of the mesh lines but with the z-coordinate equal to the value of the solution).
-function convert_PlotData2D_to_mesh_Points(pds::PlotDataSeries{<:PlotData2DTriangulated
-                                                               };
+function convert_PlotData2D_to_mesh_Points(pds::PlotDataSeries{<:PlotData2DTriangulated};
                                            set_z_coordinate_zero = false)
     @unpack variable_id = pds
     pd = pds.plot_data
@@ -265,7 +257,7 @@ function iplot(pd::PlotData2DTriangulated;
 
     # On OSX, shift-command-4 for screenshots triggers a constant "up-zoom".
     # To avoid this, we remap up-zoom to the right shift button instead.
-    Makie.cameracontrols(ax.scene).attributes[:up_key][] = Makie.Keyboard.right_shift
+    Makie.cameracontrols(ax.scene).controls.up_key = Makie.Keyboard.right_shift
 
     # typing this pulls up the figure (similar to display(plot!()) in Plots.jl)
     fig
@@ -335,7 +327,7 @@ end
 # ================== new Makie plot recipes ====================
 
 # This initializes a Makie recipe, which creates a new type definition which Makie uses to create
-# custom `trixiheatmap` plots. See also https://makie.juliaplots.org/stable/recipes.html
+# custom `trixiheatmap` plots. See also https://docs.makie.org/stable/documentation/recipes/
 Makie.@recipe(TrixiHeatmap, plot_data_series) do scene
     Makie.Theme(colormap = default_Makie_colormap())
 end
@@ -346,10 +338,9 @@ function Makie.plot!(myplot::TrixiHeatmap)
     plotting_mesh = global_plotting_triangulation_makie(pds;
                                                         set_z_coordinate_zero = true)
 
-    @unpack variable_id = pds
     pd = pds.plot_data
-    solution_z = vec(StructArrays.component(pd.data, variable_id))
-    Makie.mesh!(myplot, plotting_mesh, color = solution_z, shading = false,
+    solution_z = vec(StructArrays.component(pd.data, pds.variable_id))
+    Makie.mesh!(myplot, plotting_mesh, color = solution_z, shading = Makie.NoShading,
                 colormap = myplot[:colormap])
     myplot.colorrange = extrema(solution_z)
 
@@ -411,7 +402,7 @@ function Makie.plot!(fig, pd::PlotData2DTriangulated;
 
         row = row_list[variable_to_plot]
         col = col_list[variable_to_plot]
-        Makie.Colorbar(fig[row, col][1, 2], plt)
+        Makie.Colorbar(fig[row, col][1, 2], colormap = colormap)
 
         ax.aspect = Makie.DataAspect() # equal aspect ratio
         ax.title = variable_name

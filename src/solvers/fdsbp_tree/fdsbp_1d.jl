@@ -165,6 +165,14 @@ function calc_surface_integral!(du, u, mesh::TreeMesh{1},
     return nothing
 end
 
+# Periodic FDSBP operators need to use a single element without boundaries
+function calc_surface_integral!(du, u, mesh::TreeMesh1D,
+                                equations, surface_integral::SurfaceIntegralStrongForm,
+                                dg::PeriodicFDSBP, cache)
+    @assert nelements(dg, cache) == 1
+    return nothing
+end
+
 # Specialized interface flux computation because the upwind solver does
 # not require a standard numerical flux (Riemann solver). The flux splitting
 # already separates the solution information into right-traveling and
@@ -239,19 +247,31 @@ function calc_surface_integral!(du, u, mesh::TreeMesh{1},
     return nothing
 end
 
+# Periodic FDSBP operators need to use a single element without boundaries
+function calc_surface_integral!(du, u, mesh::TreeMesh1D,
+                                equations, surface_integral::SurfaceIntegralUpwind,
+                                dg::PeriodicFDSBP, cache)
+    @assert nelements(dg, cache) == 1
+    return nothing
+end
+
 # AnalysisCallback
 
 function integrate_via_indices(func::Func, u,
                                mesh::TreeMesh{1}, equations,
                                dg::FDSBP, cache, args...; normalize = true) where {Func}
     # TODO: FD. This is rather inefficient right now and allocates...
-    weights = diag(SummationByPartsOperators.mass_matrix(dg.basis))
+    M = SummationByPartsOperators.mass_matrix(dg.basis)
+    if M isa UniformScaling
+        M = M(nnodes(dg))
+    end
+    weights = diag(M)
 
     # Initialize integral with zeros of the right shape
     integral = zero(func(u, 1, 1, equations, dg, args...))
 
     # Use quadrature to numerically integrate over entire domain
-    for element in eachelement(dg, cache)
+    @batch reduction=(+, integral) for element in eachelement(dg, cache)
         volume_jacobian_ = volume_jacobian(element, mesh, cache)
         for i in eachnode(dg)
             integral += volume_jacobian_ * weights[i] *
@@ -271,7 +291,11 @@ function calc_error_norms(func, u, t, analyzer,
                           mesh::TreeMesh{1}, equations, initial_condition,
                           dg::FDSBP, cache, cache_analysis)
     # TODO: FD. This is rather inefficient right now and allocates...
-    weights = diag(SummationByPartsOperators.mass_matrix(dg.basis))
+    M = SummationByPartsOperators.mass_matrix(dg.basis)
+    if M isa UniformScaling
+        M = M(nnodes(dg))
+    end
+    weights = diag(M)
     @unpack node_coordinates = cache.elements
 
     # Set up data structures
