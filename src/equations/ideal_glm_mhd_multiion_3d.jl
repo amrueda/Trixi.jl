@@ -1397,7 +1397,7 @@ function flux_ruedaramirez_etal(u_ll, u_rr, normal_direction::AbstractVector,
                             vk3_plus_avg * normal_direction[3]
 
         # Fill the fluxes for the mass and momentum equations
-        f1 = rho_mean * 0.5 * (v_dot_n_ll + v_dot_n_rr)
+        f1 = rho_mean * 0.5f0 * (v_dot_n_ll + v_dot_n_rr)
         f2 = f1 * v1_avg + p_mean * normal_direction[1]
         f3 = f1 * v2_avg + p_mean * normal_direction[2]
         f4 = f1 * v3_avg + p_mean * normal_direction[3]
@@ -1471,7 +1471,7 @@ end
         end
     end
 
-    λ_max = max(abs(v_ll), abs(v_rr)) + max(cf_ll, cf_rr)
+    return max(abs(v_ll), abs(v_rr)) + max(cf_ll, cf_rr)
 end
 
 @inline function max_abs_speed_naive(u_ll, u_rr, normal_direction::AbstractVector,
@@ -1502,7 +1502,77 @@ end
                        rho_v3 * inv_rho * normal_direction[3]))
     end
 
-    λ_max = max(abs(v_ll), abs(v_rr)) + max(cf_ll, cf_rr)
+    return max(abs(v_ll), abs(v_rr)) + max(cf_ll, cf_rr)
+end
+
+# Less "cautious", i.e., less overestimating `λ_max` compared to `max_abs_speed_naive`
+@inline function max_abs_speed(u_ll, u_rr, orientation::Integer,
+                               equations::IdealGlmMhdMultiIonEquations3D)
+    # Calculate fast magnetoacoustic wave speeds
+    # left
+    cf_ll = calc_fast_wavespeed(u_ll, orientation, equations)
+    # right
+    cf_rr = calc_fast_wavespeed(u_rr, orientation, equations)
+
+    # Calculate velocities
+    v_ll = zero(eltype(u_ll))
+    v_rr = zero(eltype(u_rr))
+    if orientation == 1
+        for k in eachcomponent(equations)
+            rho, rho_v1, _ = get_component(k, u_ll, equations)
+            v_ll = max(v_ll, abs(rho_v1 / rho))
+            rho, rho_v1, _ = get_component(k, u_rr, equations)
+            v_rr = max(v_rr, abs(rho_v1 / rho))
+        end
+    elseif orientation == 2
+        for k in eachcomponent(equations)
+            rho, rho_v1, rho_v2, _ = get_component(k, u_ll, equations)
+            v_ll = max(v_ll, abs(rho_v2 / rho))
+            rho, rho_v1, rho_v2, _ = get_component(k, u_rr, equations)
+            v_rr = max(v_rr, abs(rho_v2 / rho))
+        end
+    else #if orientation == 3
+        for k in eachcomponent(equations)
+            rho, rho_v1, rho_v2, rho_v3, _ = get_component(k, u_ll, equations)
+            v_ll = max(v_ll, abs(rho_v3 / rho))
+            rho, rho_v1, rho_v2, rho_v3, _ = get_component(k, u_rr, equations)
+            v_rr = max(v_rr, abs(rho_v3 / rho))
+        end
+    end
+
+    return max(abs(v_ll) + cf_ll, abs(v_rr) + cf_rr)
+end
+
+# Less "cautious", i.e., less overestimating `λ_max` compared to `max_abs_speed_naive`
+@inline function max_abs_speed(u_ll, u_rr, normal_direction::AbstractVector,
+                               equations::IdealGlmMhdMultiIonEquations3D)
+    # Calculate fast magnetoacoustic wave speeds
+    # left
+    cf_ll = calc_fast_wavespeed(u_ll, normal_direction, equations)
+    # right
+    cf_rr = calc_fast_wavespeed(u_rr, normal_direction, equations)
+
+    # Calculate velocities
+    v_ll = zero(eltype(u_ll))
+    v_rr = zero(eltype(u_rr))
+    for k in eachcomponent(equations)
+        # Left state
+        rho, rho_v1, rho_v2, rho_v3, _ = get_component(k, u_ll, equations)
+        inv_rho = 1 / rho
+        v_ll = max(v_ll,
+                   abs(rho_v1 * inv_rho * normal_direction[1] +
+                       rho_v2 * inv_rho * normal_direction[2] +
+                       rho_v3 * inv_rho * normal_direction[3]))
+        # Right state
+        rho, rho_v1, rho_v2, rho_v3, _ = get_component(k, u_rr, equations)
+        inv_rho = 1 / rho
+        v_rr = max(v_rr,
+                   abs(rho_v1 * inv_rho * normal_direction[1] +
+                       rho_v2 * inv_rho * normal_direction[2] +
+                       rho_v3 * inv_rho * normal_direction[3]))
+    end
+
+    return max(abs(v_ll) + cf_ll, abs(v_rr) + cf_rr)
 end
 
 @inline function max_abs_speeds(u, equations::IdealGlmMhdMultiIonEquations3D)
