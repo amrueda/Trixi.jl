@@ -78,7 +78,7 @@ end
         var_max[:, :, element] .= typemin(eltype(var_max))
         # Calculate bounds at Gauss-Lobatto nodes using u
         for j in eachnode(dg), i in eachnode(dg)
-            var = u[variable, i, j, element]
+            var = u[variable, i, j, element] + u[end, i, j, element] # NEW FOR SWE (use total water height!)
             var_min[i, j, element] = min(var_min[i, j, element], var)
             var_max[i, j, element] = max(var_max[i, j, element], var)
 
@@ -99,10 +99,20 @@ end
                 var_max[i, j + 1, element] = max(var_max[i, j + 1, element], var)
             end
         end
+
+        
     end
 
     # Values at element boundary
     calc_bounds_twosided_interface!(var_min, var_max, variable, u, t, semi, mesh)
+
+    # NEW FOR SWE (scale back to get water height)
+    @threaded for element in eachelement(dg, cache)
+        for j in eachnode(dg), i in eachnode(dg)
+            var_min[i, j, element] = var_min[i, j, element] - u[end, i, j, element]
+            var_max[i, j, element] = var_max[i, j, element] - u[end, i, j, element]
+        end
+    end
 end
 
 @inline function calc_bounds_twosided_interface!(var_min, var_max, variable, u, t, semi,
@@ -124,8 +134,8 @@ end
                 index_left = reverse(index_left)
                 index_right = reverse(index_right)
             end
-            var_left = u[variable, index_left..., left]
-            var_right = u[variable, index_right..., right]
+            var_left = u[variable, index_left..., left] + u[end, index_left..., left]
+            var_right = u[variable, index_right..., right] + u[end, index_right..., right]
 
             var_min[index_right..., right] = min(var_min[index_right..., right],
                                                  var_left)
@@ -161,7 +171,7 @@ end
                                                orientation, boundary_index,
                                                equations, dg, cache,
                                                index..., element)
-            var_outer = u_outer[variable]
+            var_outer = u_outer[variable] + u_outer[end]
 
             var_min[index..., element] = min(var_min[index..., element], var_outer)
             var_max[index..., element] = max(var_max[index..., element], var_outer)
