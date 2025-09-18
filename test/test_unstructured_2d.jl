@@ -2,10 +2,11 @@ module TestExamplesUnstructuredMesh2D
 
 using Test
 using Trixi
+using Adapt
 
 include("test_trixi.jl")
 
-EXAMPLES_DIR = pkgdir(Trixi, "examples", "unstructured_2d_dgsem")
+EXAMPLES_DIR = joinpath(examples_dir(), "unstructured_2d_dgsem")
 
 # Start with a clean environment: remove Trixi.jl output directory if it exists
 outdir = "out"
@@ -32,6 +33,12 @@ isdir(outdir) && rm(outdir, recursive = true)
         du_ode = similar(u_ode)
         @test (@allocated Trixi.rhs!(du_ode, u_ode, semi, t)) < 1000
     end
+    semi32 = Trixi.trixi_adapt(Array, Float32, semi)
+    @test real(semi32.solver) == Float32
+    @test real(semi32.solver.basis) == Float32
+    @test real(semi32.solver.mortar) == Float32
+    # TODO: remake ignores the mesh as well
+    @test real(semi32.mesh) == Float64
 end
 
 @trixi_testset "elixir_euler_free_stream.jl" begin
@@ -83,6 +90,7 @@ end
 end
 
 @trixi_testset "elixir_euler_basic.jl" begin
+    using Trixi: default_example_unstructured
     @test_trixi_include(default_example_unstructured(),
                         l2=[
                             0.0007213418215265047,
@@ -120,7 +128,7 @@ end
                             0.005243995459478956,
                             0.004685630332338153,
                             0.01750217718347713
-                        ],)
+                        ])
     # Ensure that we do not have excessive memory allocations
     # (e.g., from type instabilities)
     let
@@ -341,7 +349,8 @@ end
 
 # TODO: FD; for now put the unstructured tests for the 2D FDSBP here.
 @trixi_testset "FDSBP (central): elixir_advection_basic.jl" begin
-    @test_trixi_include(joinpath(pkgdir(Trixi, "examples", "unstructured_2d_fdsbp"),
+    using Trixi: examples_dir
+    @test_trixi_include(joinpath(examples_dir(), "unstructured_2d_fdsbp",
                                  "elixir_advection_basic.jl"),
                         l2=[0.0001105211407319266],
                         linf=[0.0004199363734466166])
@@ -356,7 +365,8 @@ end
 end
 
 @trixi_testset "FDSBP (central): elixir_euler_source_terms.jl" begin
-    @test_trixi_include(joinpath(pkgdir(Trixi, "examples", "unstructured_2d_fdsbp"),
+    using Trixi: examples_dir
+    @test_trixi_include(joinpath(examples_dir(), "unstructured_2d_fdsbp",
                                  "elixir_euler_source_terms.jl"),
                         l2=[8.155544666380138e-5,
                             0.0001477863788446318,
@@ -378,7 +388,8 @@ end
 end
 
 @trixi_testset "FDSBP (central): elixir_euler_free_stream.jl" begin
-    @test_trixi_include(joinpath(pkgdir(Trixi, "examples", "unstructured_2d_fdsbp"),
+    using Trixi: examples_dir
+    @test_trixi_include(joinpath(examples_dir(), "unstructured_2d_fdsbp",
                                  "elixir_euler_free_stream.jl"),
                         l2=[5.4329175009362306e-14,
                             1.0066867437607972e-13,
@@ -401,7 +412,8 @@ end
 end
 
 @trixi_testset "FDSBP (upwind): elixir_euler_source_terms_upwind.jl" begin
-    @test_trixi_include(joinpath(pkgdir(Trixi, "examples", "unstructured_2d_fdsbp"),
+    using Trixi: examples_dir
+    @test_trixi_include(joinpath(examples_dir(), "unstructured_2d_fdsbp",
                                  "elixir_euler_source_terms_upwind.jl"),
                         l2=[4.085391175504837e-5,
                             7.19179253772227e-5,
@@ -424,7 +436,8 @@ end
 end
 
 @trixi_testset "FDSBP (upwind): elixir_euler_source_terms_upwind.jl with LF splitting" begin
-    @test_trixi_include(joinpath(pkgdir(Trixi, "examples", "unstructured_2d_fdsbp"),
+    using Trixi: examples_dir
+    @test_trixi_include(joinpath(examples_dir(), "unstructured_2d_fdsbp",
                                  "elixir_euler_source_terms_upwind.jl"),
                         l2=[
                             3.8300274213823844e-5,
@@ -452,7 +465,8 @@ end
 end
 
 @trixi_testset "FDSBP (upwind): elixir_euler_free_stream_upwind.jl" begin
-    @test_trixi_include(joinpath(pkgdir(Trixi, "examples", "unstructured_2d_fdsbp"),
+    using Trixi: examples_dir
+    @test_trixi_include(joinpath(examples_dir(), "unstructured_2d_fdsbp",
                                  "elixir_euler_free_stream_upwind.jl"),
                         l2=[3.2114065566681054e-14,
                             2.132488788134846e-14,
@@ -475,7 +489,8 @@ end
 end
 
 @trixi_testset "FDSBP (upwind): elixir_euler_free_stream_upwind_float32.jl" begin
-    @test_trixi_include(joinpath(pkgdir(Trixi, "examples", "unstructured_2d_fdsbp"),
+    using Trixi: examples_dir
+    @test_trixi_include(joinpath(examples_dir(), "unstructured_2d_fdsbp",
                                  "elixir_euler_free_stream_upwind_float32.jl"),
                         l2=[0, 0, 0, 0],
                         linf=[0, 0, 0, 0],

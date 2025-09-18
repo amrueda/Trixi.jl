@@ -15,6 +15,7 @@ mkdir(outdir)
 @testset "T8codeMesh3D" begin
     @trixi_testset "test t8code mesh from p8est connectivity" begin
         @test begin
+            using Trixi: Trixi, T8codeMesh
             # Here we use the connectivity constructor from `P4est.jl` since the
             # method dispatch works only on `Ptr{p8est_connectivity}` which
             # actually is `Ptr{P4est.LibP4est.p8est_connectivity}`.
@@ -78,7 +79,7 @@ mkdir(outdir)
         @test_trixi_include(joinpath(EXAMPLES_DIR, "elixir_advection_amr.jl"),
                             # Expected errors are exactly the same as with TreeMesh!
                             l2=[1.1302812803902801e-5],
-                            linf=[0.0007889950196294793],)
+                            linf=[0.0007889950196294793])
         # Ensure that we do not have excessive memory allocations
         # (e.g., from type instabilities)
         let
@@ -127,7 +128,7 @@ mkdir(outdir)
     @trixi_testset "elixir_advection_restart.jl" begin
         @test_trixi_include(joinpath(EXAMPLES_DIR, "elixir_advection_restart.jl"),
                             l2=[0.002590388934758452],
-                            linf=[0.01840757696885409],)
+                            linf=[0.01840757696885409])
         # Ensure that we do not have excessive memory allocations
         # (e.g., from type instabilities)
         let
@@ -310,6 +311,7 @@ mkdir(outdir)
     end
 
     @trixi_testset "elixir_euler_convergence_pure_fv.jl" begin
+        using Trixi: Trixi
         @test_trixi_include(joinpath(pkgdir(Trixi, "examples", "tree_3d_dgsem"),
                                      "elixir_euler_convergence_pure_fv.jl"),
                             l2=[

@@ -5,7 +5,7 @@ using Trixi
 
 include("test_trixi.jl")
 
-EXAMPLES_DIR = pkgdir(Trixi, "examples", "tree_1d_dgsem")
+EXAMPLES_DIR = joinpath(examples_dir(), "tree_1d_dgsem")
 
 @testset "MHD" begin
 #! format: noindent
@@ -186,8 +186,7 @@ end
                             1.0526758874956808,
                             5.995204332975845e-15,
                             1.5122922036932964,
-                            0.0
-                        ],)
+                            0.0])
     # Ensure that we do not have excessive memory allocations
     # (e.g., from type instabilities)
     let

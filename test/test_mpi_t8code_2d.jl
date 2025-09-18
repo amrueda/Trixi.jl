@@ -5,7 +5,7 @@ using Trixi
 
 include("test_trixi.jl")
 
-const EXAMPLES_DIR = pkgdir(Trixi, "examples", "t8code_2d_dgsem")
+EXAMPLES_DIR = joinpath(examples_dir(), "t8code_2d_dgsem")
 
 @testset "T8codeMesh MPI 2D" begin
 #! format: noindent
@@ -20,8 +20,8 @@ const EXAMPLES_DIR = pkgdir(Trixi, "examples", "t8code_2d_dgsem")
                             linf=[6.627000273229378e-5])
 
         @testset "error-based step size control" begin
-            Trixi.mpi_isroot() && println("-"^100)
-            Trixi.mpi_isroot() &&
+            mpi_isroot() && println("-"^100)
+            mpi_isroot() &&
                 println("elixir_advection_basic.jl with error-based step size control")
 
             # Use callbacks without stepsize_callback to test error-based step size control
@@ -30,7 +30,7 @@ const EXAMPLES_DIR = pkgdir(Trixi, "examples", "t8code_2d_dgsem")
                         ode_default_options()..., callback = callbacks)
             summary_callback()
             errors = analysis_callback(sol)
-            if Trixi.mpi_isroot()
+            if mpi_isroot()
                 @test errors.l2≈[3.3022040342579066e-5] rtol=1.0e-4
                 @test errors.linf≈[0.00011787417954578494] rtol=1.0e-4
             end
@@ -83,7 +83,7 @@ const EXAMPLES_DIR = pkgdir(Trixi, "examples", "t8code_2d_dgsem")
                                      "elixir_advection_amr_solution_independent.jl"),
                             # Expected errors are exactly the same as with TreeMesh!
                             l2=[4.949660644033807e-5],
-                            linf=[0.0004867846262313763],)
+                            linf=[0.0004867846262313763])
 
         # Ensure that we do not have excessive memory allocations
         # (e.g., from type instabilities)
@@ -115,7 +115,7 @@ const EXAMPLES_DIR = pkgdir(Trixi, "examples", "t8code_2d_dgsem")
     @trixi_testset "elixir_advection_restart.jl" begin
         @test_trixi_include(joinpath(EXAMPLES_DIR, "elixir_advection_restart.jl"),
                             l2=[4.507575525876275e-6],
-                            linf=[6.21489667023134e-5],)
+                            linf=[6.21489667023134e-5])
 
         # Ensure that we do not have excessive memory allocations
         # (e.g., from type instabilities)

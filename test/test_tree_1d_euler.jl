@@ -5,7 +5,7 @@ using Trixi
 
 include("test_trixi.jl")
 
-EXAMPLES_DIR = pkgdir(Trixi, "examples", "tree_1d_dgsem")
+EXAMPLES_DIR = joinpath(examples_dir(), "tree_1d_dgsem")
 
 @testset "Compressible Euler" begin
 #! format: noindent
@@ -15,13 +15,12 @@ EXAMPLES_DIR = pkgdir(Trixi, "examples", "tree_1d_dgsem")
                         l2=[
                             2.2527950196212703e-8,
                             1.8187357193835156e-8,
-                            7.705669939973104e-8
-                        ],
+                            7.705669939973104e-8],
                         linf=[
                             1.6205433861493646e-7,
                             1.465427772462391e-7,
                             5.372255111879554e-7
-                        ],)
+                        ])
     # Ensure that we do not have excessive memory allocations
     # (e.g., from type instabilities)
     let
@@ -281,7 +280,7 @@ end
                             2.9766770877037168,
                             0.16838100902295852,
                             2.6655773445485798
-                        ],)
+                        ])
     # Ensure that we do not have excessive memory allocations
     # (e.g., from type instabilities)
     let
@@ -316,7 +315,7 @@ end
                             3.4296365168219216,
                             0.17635583964559245,
                             2.6574584326179505
-                        ],)
+                        ])
     # Ensure that we do not have excessive memory allocations
     # (e.g., from type instabilities)
     let
@@ -370,7 +369,7 @@ end
 @trixi_testset "elixir_euler_positivity.jl" begin
     @test_trixi_include(joinpath(EXAMPLES_DIR, "elixir_euler_positivity.jl"),
                         l2=[1.6493820253458906, 0.19793887460986834, 0.9783506076125921],
-                        linf=[4.71751203912051, 0.5272411022735763, 2.7426163947635844],)
+                        linf=[4.71751203912051, 0.5272411022735763, 2.7426163947635844])
     # Ensure that we do not have excessive memory allocations
     # (e.g., from type instabilities)
     let
@@ -416,6 +415,8 @@ end
 end
 
 @trixi_testset "test_quasi_1D_entropy" begin
+    using Trixi: CompressibleEulerEquationsQuasi1D, CompressibleEulerEquations1D,
+                 entropy, SVector
     a = 0.9
     u_1D = SVector(1.1, 0.2, 2.1)
     u_quasi_1D = SVector(a * 1.1, a * 0.2, a * 2.1, a)
