@@ -1,0 +1,26 @@
+[HDF5]
+libhdf5 = "/home/aruedara/Programs/hdf5/1.13.0_intel21/lib/libhdf5.so"
+libhdf5_hl = "/home/aruedara/Programs/hdf5/1.13.0_intel21/lib/libhdf5_hl.so"
+
+[HDF5_jll]
+libhdf5_hl_path = "/home/aruedara/Programs/hdf5/1.13.0_intel21/lib/libhdf5_hl.so"
+libhdf5_path = "/home/aruedara/Programs/hdf5/1.13.0_intel21/lib/libhdf5.so"
+
+[MPIPreferences]
+__clear__ = ["preloads_env_switch"]
+_format = "1.0"
+abi = "MPICH"
+binary = "system"
+cclibs = []
+libmpi = "libmpi"
+mpiexec = "mpiexec"
+preloads = []
+
+[P4est]
+libp4est = "/home/aruedara/Programs/t8code/t8code/build_intel21/lib64/libp4est.so"
+libsc = "/home/aruedara/Programs/t8code/t8code/build_intel21/lib64/libsc.so"
+
+[T8code]
+libp4est = "/home/aruedara/Programs/t8code/t8code/build_intel21/lib64/libp4est.so"
+libt8 = "/home/aruedara/Programs/t8code/t8code/build_intel21/lib64/libt8.so"
+libsc = "/home/aruedara/Programs/t8code/t8code/build_intel21/lib64/libsc.so"

@@ -7,7 +7,17 @@
 
 @doc raw"""
     IdealGlmMhdMultiIonEquations3D(; gammas, charge_to_mass, 
+                                   gas_constants = zero(SVector{length(gammas),
+                                                                eltype(gammas)}),
+                                   molar_masses = zero(SVector{length(gammas),
+                                                               eltype(gammas)}),
+                                   ion_ion_collision_constants = zeros(eltype(gammas),
+                                                               length(gammas),
+                                                               length(gammas)),
+                                   ion_electron_collision_constants = zero(SVector{length(gammas),
+                                                                                   eltype(gammas)}),
                                    electron_pressure = electron_pressure_zero,
+                                   electron_temperature = electron_pressure_zero,
                                    initial_c_h = NaN)
 
 The ideal compressible multi-ion MHD equations in three space dimensions augmented with a 
@@ -18,6 +28,37 @@ assumes that the equations are non-dimensionalized, such that the vacuum permeab
 
 In case of more than one ion species, the specific heat capacity ratios `gammas` and the charge-to-mass 
 ratios `charge_to_mass` should be passed as tuples, e.g., `gammas=(1.4, 1.667)`.
+
+The ion-ion and ion-electron collision source terms can be computed using the functions 
+[`source_terms_collision_ion_ion`](@ref) and [`source_terms_collision_ion_electron`](@ref), respectively.
+
+For ion-ion collision terms, the optional keyword arguments `gas_constants`, `molar_masses`, and `ion_ion_collision_constants` 
+must be provided.  For ion-electron collision terms, the optional keyword arguments `gas_constants`, `molar_masses`, 
+`ion_electron_collision_constants`, and `electron_temperature` are required.
+
+- **`gas_constants`** and **`molar_masses`** are tuples containing the gas constant and molar mass of each 
+  ion species, respectively. The **molar masses** can be provided in any unit system, as they are only used to 
+  compute ratios and are independent of the other arguments.
+
+- **`ion_ion_collision_constants`** is a symmetric matrix that contains coefficients to compute the collision
+  frequencies between pairs of ion species. For example, `ion_ion_collision_constants[2, 3]` contains the collision 
+  coefficient for collisions between the ion species 2 and the ion species 3. These constants are derived using the kinetic
+  theory of gases (see, e.g., *Schunk & Nagy, 2000*). They are related to the collision coefficients ``B_{st}`` listed
+  in Table 4.3 of *Schunk & Nagy (2000)*, but are scaled by the molecular mass of ion species ``t`` (i.e., 
+  `ion_ion_collision_constants[2, 3] = ` ``B_{st}/m_{t}``) and must be provided in consistent physical units 
+  (Schunk & Nagy use ``cm^3 K^{3/2} / s``). 
+  See [`source_terms_collision_ion_ion`](@ref) for more details on how these constants are used to compute the collision
+  frequencies.
+
+- **`ion_electron_collision_constants`** is a tuple containing coefficients to compute the ion-electron collision frequency 
+  for each ion species. They correspond to the collision coefficients `B_{se}` divided by the elementary charge. 
+  The ion-electron collision frequencies can also be computed using the kinetic theory 
+  of gases (see, e.g., *Schunk & Nagy, 2000*). See [`source_terms_collision_ion_electron`](@ref) for more details on how these
+  constants are used to compute the collision frequencies.
+
+- **`electron_temperature`** is a function with the signature `electron_temperature(u, equations)` that can be used
+  compute the electron temperature as a function of the state `u`. The electron temperature is relevant for the computation 
+  of the ion-electron collision source terms.
 
 The argument `electron_pressure` can be used to pass a function that computes the electron
 pressure as a function of the state `u` with the signature `electron_pressure(u, equations)`.
@@ -33,58 +74,120 @@ References:
 - A. Rueda-Ramírez, A. Sikstel, G. Gassner, An Entropy-Stable Discontinuous Galerkin Discretization
   of the Ideal Multi-Ion Magnetohydrodynamics System (2024). Journal of Computational Physics.
   [DOI: 10.1016/j.jcp.2024.113655](https://doi.org/10.1016/j.jcp.2024.113655).
+- Schunk, R. W., & Nagy, A. F. (2000). Ionospheres: Physics, plasma physics, and chemistry. 
+  Cambridge university press. [DOI: 10.1017/CBO9780511635342](https://doi.org/10.1017/CBO9780511635342).
 
 !!! info "The multi-ion GLM-MHD equations require source terms"
     In case of more than one ion species, the multi-ion GLM-MHD equations should ALWAYS be used
     with [`source_terms_lorentz`](@ref).
 """
 mutable struct IdealGlmMhdMultiIonEquations3D{NVARS, NCOMP, RealT <: Real,
-                                              ElectronPressure} <:
+                                              ElectronPressure, ElectronTemperature} <:
                AbstractIdealGlmMhdMultiIonEquations{3, NVARS, NCOMP}
     gammas::SVector{NCOMP, RealT} # Heat capacity ratios
     charge_to_mass::SVector{NCOMP, RealT} # Charge to mass ratios
+    gas_constants::SVector{NCOMP, RealT} # Specific gas constants
+    molar_masses::SVector{NCOMP, RealT} # Molar masses (can be provided in any units as they are only used to compute ratios)
+    ion_ion_collision_constants::Array{RealT, 2} # Symmetric matrix of collision frequency coefficients
+    ion_electron_collision_constants::SVector{NCOMP, RealT} # Constants for the ion-electron collision frequencies. The collision frequency is obtained as constant * (e * n_e) / T_e^1.5
     electron_pressure::ElectronPressure # Function to compute the electron pressure
+    electron_temperature::ElectronTemperature # Function to compute the electron temperature
     c_h::RealT # GLM cleaning speed
-    function IdealGlmMhdMultiIonEquations3D{NVARS, NCOMP, RealT,
-                                            ElectronPressure}(gammas
-                                                              ::SVector{NCOMP, RealT},
-                                                              charge_to_mass
-                                                              ::SVector{NCOMP, RealT},
-                                                              electron_pressure
-                                                              ::ElectronPressure,
-                                                              c_h::RealT) where
-             {NVARS, NCOMP, RealT <: Real, ElectronPressure}
+    function IdealGlmMhdMultiIonEquations3D{NVARS, NCOMP, RealT, ElectronPressure,
+                                            ElectronTemperature}(gammas
+                                                                 ::SVector{NCOMP,
+                                                                           RealT},
+                                                                 charge_to_mass
+                                                                 ::SVector{NCOMP,
+                                                                           RealT},
+                                                                 gas_constants
+                                                                 ::SVector{NCOMP,
+                                                                           RealT},
+                                                                 molar_masses
+                                                                 ::SVector{NCOMP,
+                                                                           RealT},
+                                                                 ion_ion_collision_constants
+                                                                 ::Array{RealT, 2},
+                                                                 ion_electron_collision_constants
+                                                                 ::SVector{NCOMP,
+                                                                           RealT},
+                                                                 electron_pressure
+                                                                 ::ElectronPressure,
+                                                                 electron_temperature
+                                                                 ::ElectronTemperature,
+                                                                 c_h::RealT) where
+             {NVARS, NCOMP, RealT <: Real, ElectronPressure, ElectronTemperature}
         NCOMP >= 1 ||
             throw(DimensionMismatch("`gammas` and `charge_to_mass` have to be filled with at least one value"))
 
-        new(gammas, charge_to_mass, electron_pressure, c_h)
+        new(gammas, charge_to_mass, gas_constants, molar_masses,
+            ion_ion_collision_constants,
+            ion_electron_collision_constants, electron_pressure, electron_temperature,
+            c_h)
     end
 end
 
 function IdealGlmMhdMultiIonEquations3D(; gammas, charge_to_mass,
+                                        gas_constants = zero(SVector{length(gammas),
+                                                                     eltype(gammas)}),
+                                        molar_masses = zero(SVector{length(gammas),
+                                                                    eltype(gammas)}),
+                                        ion_ion_collision_constants = zeros(eltype(gammas),
+                                                                            length(gammas),
+                                                                            length(gammas)),
+                                        ion_electron_collision_constants = zero(SVector{length(gammas),
+                                                                                        eltype(gammas)}),
                                         electron_pressure = electron_pressure_zero,
+                                        electron_temperature = electron_pressure_zero,
                                         initial_c_h = convert(eltype(gammas), NaN))
     _gammas = promote(gammas...)
     _charge_to_mass = promote(charge_to_mass...)
-    RealT = promote_type(eltype(_gammas), eltype(_charge_to_mass))
+    _gas_constants = promote(gas_constants...)
+    _molar_masses = promote(molar_masses...)
+    _ion_electron_collision_constants = promote(ion_electron_collision_constants...)
+    RealT = promote_type(eltype(_gammas), eltype(_charge_to_mass),
+                         eltype(_gas_constants), eltype(_molar_masses),
+                         eltype(ion_ion_collision_constants),
+                         eltype(_ion_electron_collision_constants))
     __gammas = SVector(map(RealT, _gammas))
     __charge_to_mass = SVector(map(RealT, _charge_to_mass))
+    __gas_constants = SVector(map(RealT, _gas_constants))
+    __molar_masses = SVector(map(RealT, _molar_masses))
+    __ion_ion_collision_constants = map(RealT, ion_ion_collision_constants)
+    __ion_electron_collision_constants = SVector(map(RealT,
+                                                     _ion_electron_collision_constants))
 
     NVARS = length(_gammas) * 5 + 4
     NCOMP = length(_gammas)
 
     return IdealGlmMhdMultiIonEquations3D{NVARS, NCOMP, RealT,
-                                          typeof(electron_pressure)}(__gammas,
-                                                                     __charge_to_mass,
-                                                                     electron_pressure,
-                                                                     initial_c_h)
+                                          typeof(electron_pressure),
+                                          typeof(electron_temperature)}(__gammas,
+                                                                        __charge_to_mass,
+                                                                        __gas_constants,
+                                                                        __molar_masses,
+                                                                        __ion_ion_collision_constants,
+                                                                        __ion_electron_collision_constants,
+                                                                        electron_pressure,
+                                                                        electron_temperature,
+                                                                        initial_c_h)
 end
 
 # Outer constructor for `@reset` works correctly
-function IdealGlmMhdMultiIonEquations3D(gammas, charge_to_mass, electron_pressure, c_h)
+function IdealGlmMhdMultiIonEquations3D(gammas, charge_to_mass, gas_constants,
+                                        molar_masses, ion_ion_collision_constants,
+                                        ion_electron_collision_constants,
+                                        electron_pressure,
+                                        electron_temperature,
+                                        c_h)
     return IdealGlmMhdMultiIonEquations3D(gammas = gammas,
                                           charge_to_mass = charge_to_mass,
+                                          gas_constants = gas_constants,
+                                          molar_masses = molar_masses,
+                                          ion_ion_collision_constants = ion_ion_collision_constants,
+                                          ion_electron_collision_constants = ion_electron_collision_constants,
                                           electron_pressure = electron_pressure,
+                                          electron_temperature = electron_temperature,
                                           initial_c_h = c_h)
 end
 
@@ -816,6 +919,133 @@ The term is composed of four individual non-conservative terms:
     return SVector(f)
 end
 
+@inline function flux_nonconservative_central(u_ll, u_rr,
+                                              normal_direction::AbstractVector,
+                                              equations::IdealGlmMhdMultiIonEquations3D)
+    @unpack charge_to_mass = equations
+    # Unpack left and right states to get the magnetic field
+    B1_ll, B2_ll, B3_ll = magnetic_field(u_ll, equations)
+    B1_rr, B2_rr, B3_rr = magnetic_field(u_rr, equations)
+    psi_ll = divergence_cleaning_field(u_ll, equations)
+    psi_rr = divergence_cleaning_field(u_rr, equations)
+    B_dot_n_ll = B1_ll * normal_direction[1] +
+                 B2_ll * normal_direction[2] +
+                 B3_ll * normal_direction[3]
+    B_dot_n_rr = B1_rr * normal_direction[1] +
+                 B2_rr * normal_direction[2] +
+                 B3_rr * normal_direction[3]
+    B_dot_n_avg = 0.5f0 * (B_dot_n_ll + B_dot_n_rr)
+
+    # Compute important averages
+    B1_avg = 0.5f0 * (B1_ll + B1_rr)
+    B2_avg = 0.5f0 * (B2_ll + B2_rr)
+    B3_avg = 0.5f0 * (B3_ll + B3_rr)
+    mag_norm_ll = B1_ll^2 + B2_ll^2 + B3_ll^2
+    mag_norm_rr = B1_rr^2 + B2_rr^2 + B3_rr^2
+    mag_norm_avg = 0.5f0 * (mag_norm_ll + mag_norm_rr)
+    psi_avg = 0.5f0 * (psi_ll + psi_rr)
+
+    # Mean electron pressure
+    pe_ll = equations.electron_pressure(u_ll, equations)
+    pe_rr = equations.electron_pressure(u_rr, equations)
+    pe_mean = 0.5f0 * (pe_ll + pe_rr)
+
+    # Compute charge ratio of u_ll
+    charge_ratio_ll = zero(MVector{ncomponents(equations), eltype(u_ll)})
+    total_electron_charge = zero(eltype(u_ll))
+    for k in eachcomponent(equations)
+        rho_k = u_ll[3 + (k - 1) * 5 + 1] # Extract densities from conserved variable vector
+        charge_ratio_ll[k] = rho_k * charge_to_mass[k]
+        total_electron_charge += charge_ratio_ll[k]
+    end
+    charge_ratio_ll ./= total_electron_charge
+
+    # Compute auxiliary variables
+    v1_plus_ll, v2_plus_ll, v3_plus_ll, vk1_plus_ll, vk2_plus_ll, vk3_plus_ll = charge_averaged_velocities(u_ll,
+                                                                                                           equations)
+    v1_plus_rr, v2_plus_rr, v3_plus_rr, vk1_plus_rr, vk2_plus_rr, vk3_plus_rr = charge_averaged_velocities(u_rr,
+                                                                                                           equations)
+    v_plus_dot_n_ll = (v1_plus_ll * normal_direction[1] +
+                       v2_plus_ll * normal_direction[2] +
+                       v3_plus_ll * normal_direction[3])
+    f = zero(MVector{nvariables(equations), eltype(u_ll)})
+
+    # Entries of Godunov-Powell term for induction equation (multiply by 2 because the non-conservative flux is 
+    # multiplied by 0.5 whenever it's used in the Trixi code)
+    f[1] = 2 * v1_plus_ll * B_dot_n_avg
+    f[2] = 2 * v2_plus_ll * B_dot_n_avg
+    f[3] = 2 * v3_plus_ll * B_dot_n_avg
+
+    for k in eachcomponent(equations)
+        # Compute terms for each species
+        # (we multiply by 2 because the non-conservative flux is multiplied by 0.5 whenever it's used in the Trixi code)
+
+        # Compute term Lorentz term
+        f2_ll = ((0.5f0 * mag_norm_ll + pe_ll) * normal_direction[1] -
+                 B_dot_n_ll * B1_ll)
+        f2_rr = ((0.5f0 * mag_norm_rr + pe_rr) * normal_direction[1] -
+                 B_dot_n_rr * B1_rr)
+        f2 = charge_ratio_ll[k] * (f2_ll + f2_rr)
+
+        f3_ll = ((0.5f0 * mag_norm_ll + pe_ll) * normal_direction[2] -
+                 B_dot_n_ll * B2_ll)
+        f3_rr = ((0.5f0 * mag_norm_rr + pe_rr) * normal_direction[2] -
+                 B_dot_n_rr * B2_rr)
+        f3 = charge_ratio_ll[k] * (f3_ll + f3_rr)
+
+        f4_ll = ((0.5f0 * mag_norm_ll + pe_ll) * normal_direction[3] -
+                 B_dot_n_ll * B3_ll)
+        f4_rr = ((0.5f0 * mag_norm_rr + pe_rr) * normal_direction[3] -
+                 B_dot_n_rr * B3_rr)
+        f4 = charge_ratio_ll[k] * (f4_ll + f4_rr)
+
+        f5 = (vk1_plus_ll[k] * normal_direction[1] +
+              vk2_plus_ll[k] * normal_direction[2] +
+              vk3_plus_ll[k] * normal_direction[3]) * pe_mean * 2
+
+        # Compute multi-ion term (vanishes for NCOMP==1)
+        vk1_minus_ll = v1_plus_ll - vk1_plus_ll[k]
+        vk2_minus_ll = v2_plus_ll - vk2_plus_ll[k]
+        vk3_minus_ll = v3_plus_ll - vk3_plus_ll[k]
+        vk1_minus_rr = v1_plus_rr - vk1_plus_rr[k]
+        vk2_minus_rr = v2_plus_rr - vk2_plus_rr[k]
+        vk3_minus_rr = v3_plus_rr - vk3_plus_rr[k]
+        f5 += ((B2_ll * ((vk1_minus_ll * B2_ll - vk2_minus_ll * B1_ll) +
+                 (vk1_minus_rr * B2_rr - vk2_minus_rr * B1_rr)) +
+                B3_ll * ((vk1_minus_ll * B3_ll - vk3_minus_ll * B1_ll) +
+                 (vk1_minus_rr * B3_rr - vk3_minus_rr * B1_rr))) *
+               normal_direction[1] +
+               (B1_ll * ((vk2_minus_ll * B1_ll - vk1_minus_ll * B2_ll) +
+                 (vk2_minus_rr * B1_rr - vk1_minus_rr * B2_rr)) +
+                B3_ll * ((vk2_minus_ll * B3_ll - vk3_minus_ll * B2_ll) +
+                 (vk2_minus_rr * B3_rr - vk3_minus_rr * B2_rr))) *
+               normal_direction[2] +
+               (B1_ll * ((vk3_minus_ll * B1_ll - vk1_minus_ll * B3_ll) +
+                 (vk3_minus_rr * B1_rr - vk1_minus_rr * B3_rr)) +
+                B2_ll * ((vk3_minus_ll * B2_ll - vk2_minus_ll * B3_ll) +
+                 (vk3_minus_rr * B2_rr - vk2_minus_rr * B3_rr))) *
+               normal_direction[3])
+
+        # Compute Godunov-Powell term
+        f2 += charge_ratio_ll[k] * B1_ll * B_dot_n_avg * 2
+        f3 += charge_ratio_ll[k] * B2_ll * B_dot_n_avg * 2
+        f4 += charge_ratio_ll[k] * B3_ll * B_dot_n_avg * 2
+        f5 += (v1_plus_ll * B1_ll + v2_plus_ll * B2_ll + v3_plus_ll * B3_ll) *
+              B_dot_n_avg * 2
+
+        # Compute GLM term for the energy
+        f5 += v_plus_dot_n_ll * psi_ll * psi_avg * 2
+
+        # Add to the flux vector
+        set_component!(f, k, 0, f2, f3, f4, f5, equations)
+    end
+    # Compute GLM term for psi (multiply by 2 because the non-conservative flux is 
+    # multiplied by 0.5 whenever it's used in the Trixi code)
+    f[end] = 2 * v_plus_dot_n_ll * psi_avg
+
+    return SVector(f)
+end
+
 """
     flux_ruedaramirez_etal(u_ll, u_rr, orientation, equations::IdealGlmMhdMultiIonEquations3D)
 
@@ -1514,12 +1744,17 @@ end
             (rho_e - 0.5f0 * rho * (v1^2 + v2^2 + v3^2) - 0.5f0 * (B1^2 + B2^2 + B3^2) -
              0.5f0 * psi^2)
         a_square = gamma * p * rho_inv
-        inv_sqrt_rho = 1 / sqrt(rho)
 
-        b1 = B1 * inv_sqrt_rho
-        b2 = B2 * inv_sqrt_rho
-        b3 = B3 * inv_sqrt_rho
-        b_square = b1^2 + b2^2 + b3^2
+        if isapprox(equations.charge_to_mass[k], 0.0)
+            b_square = b1 = b2 = b3 = 0.0
+        else
+            inv_sqrt_rho = 1 / sqrt(rho)
+
+            b1 = B1 * inv_sqrt_rho
+            b2 = B2 * inv_sqrt_rho
+            b3 = B3 * inv_sqrt_rho
+            b_square = b1^2 + b2^2 + b3^2
+        end
 
         if orientation == 1
             c_f = max(c_f,
@@ -1564,20 +1799,26 @@ end
             (rho_e - 0.5f0 * rho * (v1^2 + v2^2 + v3^2) - 0.5f0 * (B1^2 + B2^2 + B3^2) -
              0.5f0 * psi^2)
         a_square = gamma * p * rho_inv
-        inv_sqrt_rho = 1 / sqrt(rho)
 
-        b1 = B1 * inv_sqrt_rho
-        b2 = B2 * inv_sqrt_rho
-        b3 = B3 * inv_sqrt_rho
-        b_square = b1^2 + b2^2 + b3^2
-        b_dot_n_squared = (b1 * normal_direction[1] +
-                           b2 * normal_direction[2] +
-                           b3 * normal_direction[3])^2 / norm_squared
+        if isapprox(equations.charge_to_mass[k], 0.0)
+            b_square = 0.0
+            b_dot_n_squared = 0.0
+        else
+            inv_sqrt_rho = 1 / sqrt(rho)
+
+            b1 = B1 * inv_sqrt_rho
+            b2 = B2 * inv_sqrt_rho
+            b3 = B3 * inv_sqrt_rho
+            b_square = b1^2 + b2^2 + b3^2
+            b_dot_n_squared = (b1 * normal_direction[1] +
+                            b2 * normal_direction[2] +
+                            b3 * normal_direction[3])^2 / norm_squared
+        end
 
         c_f = max(c_f,
                   sqrt((0.5f0 * (a_square + b_square) +
-                        0.5f0 * sqrt((a_square + b_square)^2 -
-                             4 * a_square * b_dot_n_squared)) *
+                        0.5f0 *
+                        sqrt((a_square + b_square)^2 - 4 * a_square * b_dot_n_squared)) *
                        norm_squared))
     end
 
