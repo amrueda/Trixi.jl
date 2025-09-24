@@ -211,7 +211,7 @@ basis = LobattoLegendreBasis(3)
 
 limiter_idp = SubcellLimiterIDP(equations, basis;
                                 positivity_variables_cons = ["rho_1", "rho_2"],
-                                positivity_variables_nonlinear = [pressure1, pressure2],
+                                positivity_variables_nonlinear = (pressure1, pressure2),
                                 local_twosided_variables_cons = [], #["rho_1", "rho_2"] 
                                 local_onesided_variables_nonlinear = [],
                                 max_iterations_newton = 40, # Default parameters are not sufficient to fulfill bounds properly.
@@ -275,11 +275,13 @@ save_solution = SaveSolutionCallback(dt = 0.01, # interval = 50, #
                                      #  extra_node_variables = (:limiting_coefficient,)
                                      )
 
-stepsize_callback = StepsizeCallback(cfl = 0.5)
+cfl = 0.5
+stepsize_callback = StepsizeCallback(cfl = cfl)
 
 save_restart = SaveRestartCallback(interval = 100,
                                    save_final_restart = true,
                                    output_directory = joinpath(@__DIR__, "out"))
+
 glm_speed_callback = GlmSpeedCallback(glm_scale = 1.0, cfl = cfl)
 callbacks = CallbackSet(summary_callback,
                         analysis_callback, alive_callback,
