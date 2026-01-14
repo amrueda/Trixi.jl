@@ -22,7 +22,7 @@ mesh for a two-dimensional surface or shell in three-dimensional space.
     releases.
 """
 mutable struct P4estMesh{NDIMS, NDIMS_AMBIENT, RealT <: Real, IsParallel, P, Ghost,
-                         NDIMSP2, NNODES} <:
+                         NDIMSP2, NDIMSP3, NNODES} <:
                AbstractMesh{NDIMS}
     p4est       :: P # Either PointerWrapper{p4est_t} or PointerWrapper{p8est_t}
     is_parallel :: IsParallel
@@ -35,10 +35,14 @@ mutable struct P4estMesh{NDIMS, NDIMS_AMBIENT, RealT <: Real, IsParallel, P, Gho
     current_filename::String
     unsaved_changes::Bool
     p4est_partition_allow_for_coarsening::Bool
+    mimetic::Bool
+    exact_jacobian::Bool
+    polydeg_parent_metrics::Int
+    tree_contravariant_vectors::Array{RealT, NDIMSP3} # [dimension, i, j, k, tree]
 
     function P4estMesh{NDIMS}(p4est, tree_node_coordinates, nodes, boundary_names,
                               current_filename, unsaved_changes,
-                              p4est_partition_allow_for_coarsening) where {NDIMS}
+                              p4est_partition_allow_for_coarsening, mimetic = false, exact_jacobian = false, polydeg_parent_metrics = false, tree_contravariant_vectors = Array{eltype(tree_node_coordinates), NDIMS + 3}(undef, 3, ntuple(_ -> 0, NDIMS)..., 1)) where {NDIMS}
         if NDIMS == 2
             @assert p4est isa Ptr{p4est_t}
         elseif NDIMS == 3
@@ -67,7 +71,7 @@ mutable struct P4estMesh{NDIMS, NDIMS_AMBIENT, RealT <: Real, IsParallel, P, Gho
         # set here in the inner constructor to size(tree_node_coordinates, 1).
         mesh = new{NDIMS, size(tree_node_coordinates, 1),
                    eltype(tree_node_coordinates), typeof(is_parallel),
-                   typeof(p4est_pw), typeof(ghost_pw), NDIMS + 2, length(nodes)}(p4est_pw,
+                   typeof(p4est_pw), typeof(ghost_pw), NDIMS + 2, NDIMS + 3, length(nodes)}(p4est_pw,
                                                                                  is_parallel,
                                                                                  ghost_pw,
                                                                                  tree_node_coordinates,
@@ -75,7 +79,11 @@ mutable struct P4estMesh{NDIMS, NDIMS_AMBIENT, RealT <: Real, IsParallel, P, Gho
                                                                                  boundary_names,
                                                                                  current_filename,
                                                                                  unsaved_changes,
-                                                                                 p4est_partition_allow_for_coarsening)
+                                                                                 p4est_partition_allow_for_coarsening,
+                                                                                 mimetic,
+                                                                                 exact_jacobian,
+                                                                                 polydeg_parent_metrics, 
+                                                                                 tree_contravariant_vectors)
 
         # Destroy `p4est` structs when the mesh is garbage collected
         finalizer(destroy_mesh, mesh)
@@ -188,7 +196,10 @@ function P4estMesh(trees_per_dimension; polydeg,
                    coordinates_max = nothing,
                    RealT = Float64, initial_refinement_level = 0, periodicity = true,
                    unsaved_changes = true,
-                   p4est_partition_allow_for_coarsening = true)
+                   p4est_partition_allow_for_coarsening = true,
+                   mimetic = false,
+                   exact_jacobian = false,
+                   polydeg_parent_metrics = 0)
     @assert ((coordinates_min === nothing)===(coordinates_max === nothing)) "Either both or none of coordinates_min and coordinates_max must be specified"
 
     coordinates_min_max_check(coordinates_min, coordinates_max)
@@ -227,6 +238,47 @@ function P4estMesh(trees_per_dimension; polydeg,
     calc_tree_node_coordinates!(tree_node_coordinates, nodes, mapping,
                                 trees_per_dimension)
 
+    tree_contravariant_vectors = Array{RealT, NDIMS + 3}(undef, NDIMS, NDIMS,
+                                                    ntuple(_ -> polydeg_parent_metrics + 1,
+                                                           NDIMS)...,
+                                                    prod(trees_per_dimension))
+
+    if polydeg_parent_metrics > 0 # Only available for one tree
+        basis_parent_metrics = LobattoLegendreBasis(RealT, polydeg_parent_metrics)
+        nodes_parent_metrics = basis_parent_metrics.nodes
+
+        jacobian_matrix = zeros(3,3,ntuple(_ -> polydeg_parent_metrics+1,NDIMS)..., 1)
+        inverse_jacobian = zeros(ntuple(_ -> polydeg_parent_metrics+1,NDIMS)..., 1)
+        node_coordinates_comp = zeros(3, polydeg_parent_metrics+1)
+        node_coordinates_comp[1,:] = nodes_parent_metrics
+        node_coordinates_comp[2,:] = nodes_parent_metrics
+        node_coordinates_comp[3,:] = nodes_parent_metrics
+        
+        if exact_jacobian
+            calc_jacobian_matrix_exact!(jacobian_matrix, 1, tree_node_coordinates, basis_parent_metrics, node_coordinates_comp)
+        else
+            # TODO: This makes sense only for polydeg_geo = polydeg_parent_metrics
+            calc_jacobian_matrix!(jacobian_matrix, 1, tree_node_coordinates, basis_parent_metrics)
+        end
+
+        if mimetic
+            calc_contravariant_vectors_mimetic!(tree_contravariant_vectors, 1, jacobian_matrix,
+                                                tree_node_coordinates, basis_parent_metrics, node_coordinates_comp)
+        else
+            # TODO: This makes sense only for polydeg_geo = polydeg_parent_metrics
+            calc_contravariant_vectors!(tree_contravariant_vectors, 1, jacobian_matrix,
+                                                tree_node_coordinates, basis_parent_metrics)
+        end
+
+        calc_inverse_jacobian!(inverse_jacobian, 1, jacobian_matrix, basis_parent_metrics)
+
+        #= @turbo for k in eachnode(basis_parent_metrics), j in eachnode(basis_parent_metrics), i in eachnode(basis_parent_metrics)
+            for r in 1:3, s in 1:3
+                tree_contravariant_vectors[s,r,i,j,k,1] *= inverse_jacobian[i,j,k,1]
+            end
+        end =#
+    end
+
     # p4est_connectivity_new_brick has trees in Z-order, so use our own function for this
     connectivity = connectivity_structured(trees_per_dimension..., periodicity)
 
@@ -239,7 +291,7 @@ function P4estMesh(trees_per_dimension; polydeg,
 
     return P4estMesh{NDIMS}(p4est, tree_node_coordinates, nodes,
                             boundary_names, "", unsaved_changes,
-                            p4est_partition_allow_for_coarsening)
+                            p4est_partition_allow_for_coarsening, mimetic, exact_jacobian, polydeg_parent_metrics, tree_contravariant_vectors)
 end
 
 # 2D version

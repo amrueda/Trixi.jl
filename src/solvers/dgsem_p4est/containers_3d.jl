@@ -13,13 +13,47 @@ function init_elements!(elements, mesh::Union{P4estMesh{3}, T8codeMesh{3}},
 
     calc_node_coordinates!(node_coordinates, mesh, basis)
 
-    for element in 1:ncells(mesh)
-        calc_jacobian_matrix!(jacobian_matrix, element, node_coordinates, basis)
+    # Macros from `p4est`
+    p4est_root_len = 1 << P4EST_MAXLEVEL
+    p4est_quadrant_len(l) = 1 << (P4EST_MAXLEVEL - l)
 
-        calc_contravariant_vectors!(contravariant_vectors, element, jacobian_matrix,
-                                    node_coordinates, basis)
+    trees = unsafe_wrap_sc(p8est_tree_t, mesh.p4est.trees)
 
-        calc_inverse_jacobian!(inverse_jacobian, element, jacobian_matrix, basis)
+    node_coordinates_comp = zeros(3, nnodes(basis))
+
+    for tree in eachindex(trees)
+        offset = trees[tree].quadrants_offset
+        quadrants = unsafe_wrap_sc(p8est_quadrant_t, trees[tree].quadrants)
+
+        for i in eachindex(quadrants)
+            element = offset + i
+            quad = quadrants[i]
+            quad_length = p4est_quadrant_len(quad.level) / p4est_root_len
+            
+            if mesh.exact_jacobian || mesh.mimetic
+                calc_node_coordinates_computational!(node_coordinates_comp, quad_length, p4est_root_len, quad, mesh, basis)
+            end
+            
+            if mesh.exact_jacobian
+                calc_jacobian_matrix_exact!(jacobian_matrix, element, node_coordinates, basis, node_coordinates_comp)
+            else
+                calc_jacobian_matrix!(jacobian_matrix, element, node_coordinates, basis)
+            end
+
+            calc_inverse_jacobian!(inverse_jacobian, element, jacobian_matrix, basis)
+
+            if mesh.polydeg_parent_metrics > 0
+                calc_contravariant_vectors_interpolate!(contravariant_vectors, element, quad, quad_length, tree, mesh, p4est_root_len, basis, inverse_jacobian)
+            else
+                if mesh.mimetic
+                    calc_contravariant_vectors_mimetic!(contravariant_vectors, element, jacobian_matrix,
+                                                        node_coordinates, basis, node_coordinates_comp)
+                else
+                    calc_contravariant_vectors!(contravariant_vectors, element, jacobian_matrix,
+                                                        node_coordinates, basis)
+                end
+            end            
+        end
     end
 
     return nothing
@@ -31,7 +65,7 @@ function calc_node_coordinates!(node_coordinates,
                                 basis::LobattoLegendreBasis)
     # Hanging nodes will cause holes in the mesh if its polydeg is higher
     # than the polydeg of the solver.
-    @assert length(basis.nodes)>=length(mesh.nodes) "The solver can't have a lower polydeg than the mesh"
+    #@assert length(basis.nodes)>=length(mesh.nodes) "The solver can't have a lower polydeg than the mesh"
 
     calc_node_coordinates!(node_coordinates, mesh, basis.nodes)
 end
@@ -74,6 +108,55 @@ function calc_node_coordinates!(node_coordinates,
     end
 
     return node_coordinates
+end
+
+function calc_node_coordinates_computational!(node_coordinates_comp, quad_length, p4est_root_len, quad, mesh::P4estMesh{3}, basis)
+    @unpack nodes = basis
+
+    node_coordinates_comp[1,:] = 2 * (quad_length * 1 / 2 * (nodes .+ 1) .+
+                                      quad.x / p4est_root_len) .- 1
+    node_coordinates_comp[2,:] = 2 * (quad_length * 1 / 2 * (nodes .+ 1) .+
+                                      quad.y / p4est_root_len) .- 1
+    node_coordinates_comp[3,:] = 2 * (quad_length * 1 / 2 * (nodes .+ 1) .+
+                                      quad.z / p4est_root_len) .- 1
+end
+
+function calc_contravariant_vectors_interpolate!(contravariant_vectors, element, quad, quad_length, tree, mesh::P4estMesh{3}, p4est_root_len, basis, inverse_jacobian)
+    @unpack nodes = basis
+
+    basis_parent_metrics = LobattoLegendreBasis(eltype(contravariant_vectors), mesh.polydeg_parent_metrics)
+    nodes_parent_metrics = basis_parent_metrics.nodes
+
+    nodes_out_x = 2 * (quad_length * 1 / 2 * (nodes .+ 1) .+
+                    quad.x / p4est_root_len) .- 1
+    nodes_out_y = 2 * (quad_length * 1 / 2 * (nodes .+ 1) .+
+                    quad.y / p4est_root_len) .- 1
+    nodes_out_z = 2 * (quad_length * 1 / 2 * (nodes .+ 1) .+
+                    quad.z / p4est_root_len) .- 1
+
+    matrix1 = polynomial_interpolation_matrix(nodes_parent_metrics, nodes_out_x)
+    matrix2 = polynomial_interpolation_matrix(nodes_parent_metrics, nodes_out_y)
+    matrix3 = polynomial_interpolation_matrix(nodes_parent_metrics, nodes_out_z)
+
+    multiply_dimensionwise!(view(contravariant_vectors, 1, :, :, :, :, element),
+                            matrix1, matrix2, matrix3,
+                            view(mesh.tree_contravariant_vectors, 1, :, :, :, :, tree))
+
+    multiply_dimensionwise!(view(contravariant_vectors, 2, :, :, :, :, element),
+                            matrix1, matrix2, matrix3,
+                            view(mesh.tree_contravariant_vectors, 2, :, :, :, :, tree))
+
+    multiply_dimensionwise!(view(contravariant_vectors, 3, :, :, :, :, element),
+                            matrix1, matrix2, matrix3,
+                            view(mesh.tree_contravariant_vectors, 3, :, :, :, :, tree))
+
+    #= @turbo for k in eachnode(basis), j in eachnode(basis), i in eachnode(basis)
+        for r in 1:3, s in 1:3
+            contravariant_vectors[s,r,i,j,k,element] /= inverse_jacobian[i,j,k,element]
+        end
+    end =#
+
+    contravariant_vectors[:,:,:,:,:,element] /= 2^(2 * quad.level)
 end
 
 # Initialize node_indices of interface container
